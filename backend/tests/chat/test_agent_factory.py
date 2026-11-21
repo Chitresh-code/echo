@@ -16,7 +16,7 @@ def test_build_agent(monkeypatch):
     settings = get_settings()
 
     side = providers.build_side_model("anthropic", "test-key", None, None)
-    agent = agent_factory.build_agent(settings, WS, CHAT, providers.build_model("anthropic", "test-key", None, "claude-sonnet-5-5"), "anthropic/claude-sonnet-5-5", side)
+    agent = agent_factory.build_agent(settings, WS, CHAT, providers.build_model("anthropic", "test-key", None, "claude-sonnet-5-5"), "anthropic/claude-sonnet-5-5", side, "Payouts", "Reconcile weekly payouts")
 
     kw = calls[0]
     assert isinstance(agent.sandbox, RunnerSandbox) and agent.sandbox.workspace_id == WS
@@ -38,6 +38,14 @@ def test_build_agent(monkeypatch):
     assert "Untrusted content" in agent.system_prompt
     # The harness injects AGENTS.md every turn, so the prompt does not ask for it to be read.
     assert "Read AGENTS.md" not in agent.system_prompt
+    # The agent knows which one it is and the job it is learning.
+    assert 'You are "Payouts"' in agent.system_prompt and "<job>\nReconcile weekly payouts\n</job>" in agent.system_prompt
+    assert "# Learning the job" in agent.system_prompt
+
+
+def test_instructions_without_a_job():
+    prompt = agent_factory.instructions("/data/workspaces/x", get_settings(), "Untitled agent", "")
+    assert "<job>" not in prompt and "has not written down your job" in prompt
 
 
 def test_agent_never_touches_the_workspace_on_the_api_side(monkeypatch, fake_runner):

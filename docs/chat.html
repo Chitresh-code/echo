@@ -62,7 +62,9 @@
     <p>To keep cost down, summaries of fetched pages and the agent's notes are made by the provider's small model (Claude Haiku 5.5, gpt-6-luna or Gemini 3.5 Flash Lite) on the same key. Keys for an OpenAI-compatible service use the chosen model for this too.</p>
 
     <h2>What the agent keeps</h2>
-    <p>Put an <code>AGENTS.md</code> file at the root of the agent's workspace with your conventions, such as how to run the tests or which style to follow. The agent reads it at the start of every turn and keeps it up to date. Workflows it learns and scripts it writes for itself go in <code>.agent/skills/</code> in the workspace, so it can use them again in later chats. It also keeps short notes across chats.</p>
+    <p>The agent is told its name and its job at the start of every turn, so a change to either applies from your next message. It stays on that job: it still helps with something outside it, but says so. Without a job, it learns the job from what you ask and suggests you write it down.</p>
+    <p>When you correct the agent or show it how you want something done, it saves that as a skill: a <code>SKILL.md</code> with the steps, and any scripts it needs, in <code>.agent/skills/&lt;name&gt;/</code> in the workspace. It tells you in one line what it learned and where it saved it, and uses its skills on later tasks. A new skill is available from your next message.</p>
+    <p>Put an <code>AGENTS.md</code> file at the root of the agent's workspace with conventions for the workspace itself, such as how to run things or where files go. The agent reads it at the start of every turn and keeps it up to date. It also keeps short notes across chats.</p>
 
     <h2>Limits</h2>
     <ul>

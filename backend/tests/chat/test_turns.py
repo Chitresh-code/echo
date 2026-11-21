@@ -206,7 +206,7 @@ def test_busy_chat_is_409(client, user, fake_runner):
 
 
 def agent_maker(model):
-    return lambda: agent_factory.build_agent(get_settings(), WS, CHAT, model, "anthropic/claude-sonnet-5-5", model)
+    return lambda: agent_factory.build_agent(get_settings(), WS, CHAT, model, "anthropic/claude-sonnet-5-5", model, "Test agent", "")
 
 
 async def wait_for(condition, seconds=5):

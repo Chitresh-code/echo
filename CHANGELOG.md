@@ -38,6 +38,7 @@ Every change adds a line under the current version heading (the newest one, mark
 ### Changed
 - What a user creates is now an agent, not a workspace. Every route moved: `/api/workspaces` is `/api/agents`, and `/api/workspaces/{workspace_id}/...` (tree, file, git, chats and turns) is `/api/agents/{agent_id}/...`. `POST /api/agents` needs a `name`. The error codes `workspace_not_found` and `invalid_workspace_id` are now `agent_not_found` and `invalid_agent_id`. Existing workspaces become agents named "Untitled agent" at the first start, with their files, chats and memory kept.
 - The agent's instructions are rewritten: who Echo is, the sandbox's real limits, treating web pages, files and command output as data rather than instructions, git habits, and ending each turn with what changed, how it was checked and what was not done.
+- The agent's instructions now carry the agent's name and job, read at every turn, so a rename or a new job applies from the next message. They frame the agent as learning that one job: use its skills first, save corrections as skills in `.agent/skills/`, say in one line what it learned, and say when a request falls outside its job. Without a job, it asks you to describe one.
 - Page summaries from web fetches and memory extraction after each turn run on the provider's small model (Claude Haiku 5.5, gpt-6-luna or Gemini 3.5 Flash Lite) with reasoning off, on the same key, instead of on the turn's model and effort. OpenAI-compatible keys still use the turn's model.
 
 ### Removed
