@@ -20,7 +20,8 @@ Db = Annotated[AsyncSession, Depends(db)]
     "",
     summary="Add a model provider key",
     description="The key is checked by listing the provider's models, then stored encrypted. It is never shown again; "
-    "responses carry only its last four characters. `base_url` is required for `openai_compatible` and refused otherwise.",
+    "responses carry only its last four characters. `base_url` is required for `openai_compatible` and refused otherwise. "
+    "An `openai_compatible` endpoint without a model list takes `models`, the ids to offer; the key is then checked with a one-token chat request to the first.",
 )
 async def add_credential(body: NewCredential, user: CurrentUser, session: Db) -> Credential:
     return await service.add(get_settings(), session, user.id, body)

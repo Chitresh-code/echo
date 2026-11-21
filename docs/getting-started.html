@@ -14,7 +14,7 @@
       <a href="getting-started.html">Getting started</a>
       <a href="signing-in.html">Signing in</a>
       <a href="keys.html">Keys</a>
-      <a href="workspaces.html">Workspaces</a>
+      <a href="agents.html">Agents</a>
       <a href="chat.html">Chat</a>
       <a href="/api/docs">API reference</a>
     </nav>
@@ -26,7 +26,7 @@
     <h2>What you need</h2>
     <ul>
       <li>Docker with Compose, on Linux or Docker Desktop (macOS or Windows).</li>
-      <li>Permission to run privileged containers. The sandbox needs it to create a jail for each workspace.</li>
+      <li>Permission to run privileged containers. The sandbox needs it to create a jail for each agent.</li>
       <li>A Microsoft Entra tenant (your organization's Microsoft 365 or Azure directory), and the right to register an app in it.</li>
     </ul>
     <p>You do not need a model provider key to install Echo. Each person adds their own after signing in, on the <a href="keys.html">Keys</a> page.</p>
@@ -59,7 +59,7 @@ ECHO_SECRET_KEY=a key you generate, see below</code></pre>
     <pre><code>docker compose restart api</code></pre>
 
     <h2>Check it is running</h2>
-    <p>Echo listens only on your own machine. Open <code>http://localhost:8000/api/health</code> and you should see <code>"status": "ok"</code>. Then <a href="signing-in.html">sign in</a>.</p>
+    <p>Echo listens only on your own machine. Open <code>http://localhost:8000</code> and you should see Echo's sign-in page; <code>http://localhost:8000/api/health</code> answers <code>"status": "ok"</code>. Then <a href="signing-in.html">sign in</a>.</p>
     <p>Always open Echo at exactly the address in <code>ECHO_PUBLIC_URL</code>. Opened at another address, such as <code>http://127.0.0.1:8000</code> when the setting says <code>localhost</code>, sign-in cannot return to it and changes are refused with <code>bad_origin</code>.</p>
     <p>If port 8000 is already taken, set another one in <code>.env</code>, and change <code>ECHO_PUBLIC_URL</code> and the redirect URI in Entra to match:</p>
     <pre><code>ECHO_PORT=8010

@@ -98,6 +98,18 @@ async def list_models(provider: str, api_key: str, base_url: str | None) -> list
         raise provider_error(exc) from None
 
 
+async def check_chat(api_key: str, base_url: str, model_id: str) -> None:
+    """Proves a key works on an endpoint with no model list: one Chat Completions request to a model
+    the user named, a few tokens long, through the address-checking client."""
+    try:
+        async with openai.AsyncOpenAI(api_key=api_key, base_url=base_url, timeout=TIMEOUT, max_retries=0, http_client=safe_http.client()) as client:
+            await client.chat.completions.create(model=model_id, messages=[{"role": "user", "content": "Reply with OK."}], max_completion_tokens=16)
+    except openai.NotFoundError:
+        raise AppError(400, "model_not_available", f"The endpoint does not serve the model {model_id}.") from None
+    except Exception as exc:
+        raise provider_error(exc) from None
+
+
 def provider_error(exc: Exception) -> AppError:
     if safe_http.refused(exc):
         return AppError(400, "endpoint_not_allowed", "The endpoint's address is local or private, and Echo only calls public addresses.")

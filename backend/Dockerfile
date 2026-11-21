@@ -1,7 +1,15 @@
+# The browser app is built here; the api image gets only the static files it produces.
+FROM node:22-bookworm-slim AS web
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY web/ ./
+RUN npm run build
+
 FROM python:3.12-slim-bookworm AS base
 COPY --from=ghcr.io/astral-sh/uv:0.12.5 /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never PATH=/app/backend/.venv/bin:$PATH
-# Built from the repo root so the user guide in docs/ can be copied in beside the backend.
+# Built from the repo root so the user guide in docs/ and the web app can be copied in beside the backend.
 WORKDIR /app/backend
 COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --locked --no-dev --no-install-project
@@ -10,6 +18,7 @@ RUN uv sync --locked --no-dev --no-install-project
 RUN useradd --uid 10001 --no-create-home echo-api && mkdir /data && chown echo-api /data
 COPY backend/ ./
 COPY docs/ /app/docs/
+COPY --from=web /web/dist /app/web/dist
 
 FROM base AS test
 RUN uv sync --locked --no-install-project

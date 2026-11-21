@@ -1,9 +1,11 @@
-from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, StringConstraints
+
+from core.db import UtcDateTime
 
 Provider = Literal["anthropic", "openai", "google", "openai_compatible"]
+ModelId = Annotated[str, StringConstraints(min_length=1, max_length=200, pattern=r"^\S+$")]
 
 
 class NewCredential(BaseModel):
@@ -12,6 +14,10 @@ class NewCredential(BaseModel):
     # SecretStr keeps the key out of reprs and logs.
     api_key: SecretStr = Field(min_length=1, max_length=1000)
     base_url: str | None = Field(None, max_length=500, description="Only for openai_compatible: an https address such as https://api.example.com/v1")
+    models: list[ModelId] | None = Field(
+        None, min_length=1, max_length=50,
+        description="Only for openai_compatible: the model ids to offer, for an endpoint with no model list. The key is then checked with a one-token chat request to the first.",
+    )
 
 
 class Credential(BaseModel):
@@ -22,7 +28,9 @@ class Credential(BaseModel):
     label: str
     base_url: str | None
     key_hint: str
-    created_at: datetime
+    # The model ids the user gave, or null when the provider lists its own.
+    models: list[str] | None = None
+    created_at: UtcDateTime
 
 
 class ProviderModel(BaseModel):

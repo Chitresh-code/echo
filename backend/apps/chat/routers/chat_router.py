@@ -6,8 +6,9 @@ from fastapi.responses import StreamingResponse
 from apps.chat.models.chat import Chat, TurnRequest
 from apps.chat.services import agent_factory, turn_service
 from apps.credentials.services import credential_service, providers
-from apps.workspaces.routers.workspace_router import CurrentUser, Db, OwnedWorkspace
-from apps.workspaces.services.paths import WORKSPACE_ID
+from apps.agents.repositories import agents
+from apps.agents.routers.agent_router import CurrentUser, Db, OwnedAgent
+from apps.agents.services.paths import AGENT_ID
 from core.auth import current_user
 from core.config import get_settings
 from core.errors import AppError
@@ -16,14 +17,14 @@ from core.errors import AppError
 router = APIRouter(dependencies=[Depends(current_user)])
 
 
-@router.post("/api/workspaces/{workspace_id}/chats", summary="Start a chat in a workspace", tags=["chat"])
-async def create_chat(workspace_id: OwnedWorkspace) -> Chat:
+@router.post("/api/agents/{agent_id}/chats", summary="Start a chat with an agent", tags=["chat"])
+async def create_chat(agent_id: OwnedAgent) -> Chat:
     # shortcut: chats are not stored, so there is no chat list or history; add them with the browser UI.
     return Chat(id=uuid.uuid4().hex)
 
 
 @router.post(
-    "/api/workspaces/{workspace_id}/chats/{chat_id}/turns",
+    "/api/agents/{agent_id}/chats/{chat_id}/turns",
     summary="Send a message and stream the agent's turn as server-sent events",
     description="`credential_id` is one of your keys and `model` a model it can use. "
     "Streams `text` ({text}), `tool` ({id, name}) and then `done` ({stopReason, usage}) or `error` ({code, message}). "
@@ -32,12 +33,12 @@ async def create_chat(workspace_id: OwnedWorkspace) -> Chat:
     response_class=StreamingResponse,
     responses={200: {"content": {"text/event-stream": {}}}},
 )
-async def send_turn(workspace_id: OwnedWorkspace, chat_id: str, body: TurnRequest, user: CurrentUser, session: Db) -> StreamingResponse:
+async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user: CurrentUser, session: Db) -> StreamingResponse:
     settings = get_settings()
-    # Chat ids name a session folder, so they get the same check as workspace ids.
-    if not WORKSPACE_ID.fullmatch(chat_id):
+    # Chat ids name a session folder, so they get the same check as agent ids.
+    if not AGENT_ID.fullmatch(chat_id):
         raise AppError(400, "invalid_chat_id", "A chat id is 32 lowercase hex characters.")
-    chat_key = f"{workspace_id}/{chat_id}"
+    chat_key = f"{agent_id}/{chat_id}"
     if turn_service.is_busy(chat_key):
         raise AppError(409, "chat_busy", "This chat already has a turn in progress.")
     # Looked up before the stream starts, so a missing or someone else's key is a plain 404. The
@@ -46,9 +47,12 @@ async def send_turn(workspace_id: OwnedWorkspace, chat_id: str, body: TurnReques
     # shortcut: the model id goes to the provider unchecked, so a wrong one fails as turn_failed after the stream starts; the UI's picker will offer only listed models.
     model = providers.build_model(credential.provider, key, credential.base_url, body.model, body.effort)
     side_model = providers.build_side_model(credential.provider, key, credential.base_url, model)
+    # Recorded once the turn is accepted, so the agents list shows which agent was used last.
+    await agents.touch(session, agent_id)
+    await session.commit()
     stream = turn_service.stream_turn(
         chat_key,
-        lambda: agent_factory.build_agent(settings, workspace_id, chat_id, model, f"{credential.provider}/{body.model}", side_model),
+        lambda: agent_factory.build_agent(settings, agent_id, chat_id, model, f"{credential.provider}/{body.model}", side_model),
         body.prompt,
         settings.turn_timeout,
     )

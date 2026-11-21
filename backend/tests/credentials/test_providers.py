@@ -91,3 +91,39 @@ def test_a_refused_key_is_invalid_key_without_the_providers_text(exc):
 def test_anything_else_is_provider_error_without_its_text(exc):
     error = providers.provider_error(exc)
     assert (error.status_code, error.code) == (502, "provider_error") and "sk-leak" not in error.message
+
+
+@pytest.mark.parametrize("raised, code", [
+    (status_error(openai, httpx, "NotFoundError", 404), "model_not_available"),
+    (status_error(openai, httpx, "AuthenticationError", 401), "invalid_key"),
+    (status_error(openai, httpx, "InternalServerError", 500), "provider_error"),
+])
+def test_chat_check_errors(monkeypatch, raised, code):
+    import asyncio
+
+    asked = {}
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            asked.update(kwargs)
+            self.chat = self
+
+        @property
+        def completions(self):
+            return self
+
+        async def create(self, **kwargs):
+            asked.update(kwargs)
+            raise raised
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(providers.openai, "AsyncOpenAI", FakeClient)
+    with pytest.raises(AppError) as e:
+        asyncio.run(providers.check_chat(KEY, "https://gw.example.com/v1", "gpt-5.4-mini"))
+    assert e.value.code == code and "sk-leak" not in e.value.message
+    assert asked["model"] == "gpt-5.4-mini" and asked["base_url"] == "https://gw.example.com/v1" and asked["max_completion_tokens"] == 16

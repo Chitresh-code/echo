@@ -1,4 +1,4 @@
-from apps.workspaces.services.git_status import parse_porcelain
+from apps.agents.services.git_status import parse_porcelain
 
 
 def test_parses_each_kind_of_change():

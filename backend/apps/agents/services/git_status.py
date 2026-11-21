@@ -1,7 +1,7 @@
 """Parses `git status --porcelain=v1 -z` output, kept apart from running git so it is tested with
 fixed strings."""
 
-from apps.workspaces.models.workspace import GitFileStatus
+from apps.agents.models.agent import GitFileStatus
 
 
 def parse_porcelain(output: str) -> list[GitFileStatus]:

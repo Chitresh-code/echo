@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.accounts.repositories import users
 from apps.accounts.services import session_service
-from apps.workspaces.repositories import workspaces
+from apps.agents.repositories import agents
 
 
 def _run(client, work):
@@ -33,13 +33,13 @@ def sign_in_as(client, name: str = "ada") -> str:
     return user_id
 
 
-def own(client, user_id: str, workspace_id: str) -> None:
-    """Record `user_id` as the owner of a workspace, as creating it through the API would. A test
+def own(client, user_id: str, agent_id: str) -> None:
+    """Record `user_id` as the owner of an agent, as creating it through the API would. A test
     that restarts the app signs in again, so an earlier owner is replaced."""
 
     async def work(db):
-        await db.execute(workspaces.workspaces.delete().where(workspaces.workspaces.c.id == workspace_id))
-        await workspaces.add(db, workspace_id, user_id)
+        await db.execute(agents.agents.delete().where(agents.agents.c.id == agent_id))
+        await agents.add(db, agent_id, user_id)
 
     _run(client, work)
 

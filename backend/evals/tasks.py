@@ -1,5 +1,5 @@
-"""Real tasks for tuning the agent's tools and instructions. Each seeds a fresh workspace, sends one
-or more prompts, then checks the workspace through the API. Checks look only at files and git, never
+"""Real tasks for tuning the agent's tools and instructions. Each seeds a fresh agent, sends one
+or more prompts, then checks the agent's files through the API. Checks look only at files and git, never
 run anything the agent wrote, and are loose on purpose: they catch a wrong outcome, not style."""
 
 import re

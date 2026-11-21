@@ -6,13 +6,14 @@ import re
 
 from core.errors import AppError
 
-WORKSPACE_ID = re.compile(r"[0-9a-f]{32}")
+# Agent ids name the agent's workspace folder on the sandbox volume, so only this shape gets through.
+AGENT_ID = re.compile(r"[0-9a-f]{32}")
 
 
-def check_workspace_id(workspace_id: str) -> str:
-    if not WORKSPACE_ID.fullmatch(workspace_id):
-        raise AppError(400, "invalid_workspace_id", "A workspace id is 32 lowercase hex characters.")
-    return workspace_id
+def check_agent_id(agent_id: str) -> str:
+    if not AGENT_ID.fullmatch(agent_id):
+        raise AppError(400, "invalid_agent_id", "An agent id is 32 lowercase hex characters.")
+    return agent_id
 
 
 def safe_relpath(path: str) -> str:

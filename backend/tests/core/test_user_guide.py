@@ -1,7 +1,7 @@
 def test_guide_index_and_pages(client):
     r = client.get("/docs/")
     assert r.status_code == 200 and "text/html" in r.headers["content-type"]
-    for page in ("getting-started.html", "signing-in.html", "keys.html", "workspaces.html", "chat.html"):
+    for page in ("getting-started.html", "signing-in.html", "keys.html", "agents.html", "chat.html"):
         assert client.get(f"/docs/{page}").status_code == 200
     assert client.get("/docs/style.css").status_code == 200
 

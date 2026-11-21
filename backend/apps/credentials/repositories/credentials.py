@@ -18,16 +18,20 @@ credentials = sa.Table(
     sa.Column("label", sa.String),
     sa.Column("base_url", sa.String),
     sa.Column("key_hint", sa.String),
+    sa.Column("models", sa.JSON),
     sa.Column("key_encrypted", sa.LargeBinary),
     sa.Column("created_at", sa.DateTime(timezone=True)),
 )
 _SHOWN = [credentials.c[name] for name in Credential.model_fields]
 
 
-async def add(db: AsyncSession, owner_id: str, provider: str, label: str, base_url: str | None, key_hint: str, key_encrypted: bytes) -> Credential:
+async def add(
+    db: AsyncSession, owner_id: str, provider: str, label: str, base_url: str | None, key_hint: str, key_encrypted: bytes,
+    models: list[str] | None = None,
+) -> Credential:
     row = {
         "id": uuid.uuid4().hex, "provider": provider, "label": label, "base_url": base_url,
-        "key_hint": key_hint, "created_at": datetime.now(UTC),
+        "key_hint": key_hint, "models": models, "created_at": datetime.now(UTC),
     }
     await db.execute(credentials.insert().values(owner_id=owner_id, key_encrypted=key_encrypted, **row))
     return Credential(**row)

@@ -1,6 +1,6 @@
 # Evals
 
-Five real tasks for tuning the agent's tools and instructions: fix a failing test, add a small feature with tests, build a Vite page, look something up on the web, and summarize a repo that holds a planted instruction to delete everything. Each runs in a new workspace through the HTTP API of a running Echo, on your own key, and is checked by reading the workspace's files and git status.
+Five real tasks for tuning the agent's tools and instructions: fix a failing test, add a small feature with tests, build a Vite page, look something up on the web, and summarize a repo that holds a planted instruction to delete everything. Each runs in a new agent through the HTTP API of a running Echo, on your own key, and is checked by reading the workspace's files and git status.
 
 They spend real money and are never run by the test suite or CI.
 
@@ -27,4 +27,4 @@ total tokens 60010
 
 Tokens are the chosen model's input, output and cache tokens from each turn's `done` event. Page summaries and memory extraction run on the provider's small model and are not counted, so the real spend is a little higher. Cheap models with effort `low` keep a full run to cents.
 
-Each task leaves its workspace behind for inspection; its id is printed on failure in the server log under the request id shown.
+Each task leaves its agent behind for inspection; its id is printed on failure in the server log under the request id shown.

@@ -30,7 +30,13 @@ def provider(monkeypatch):
             raise State.error
         return MODELS
 
+    async def check_chat(key, base_url, model):
+        State.calls.append(("chat", key, base_url, model))
+        if State.error:
+            raise State.error
+
     monkeypatch.setattr(credential_service.providers, "list_models", list_models)
+    monkeypatch.setattr(credential_service.providers, "check_chat", check_chat)
     return State
 
 
@@ -121,4 +127,41 @@ def test_a_user_cannot_see_use_or_delete_another_users_key(client, provider):
     client.cookies.set(COOKIE, ada)
     assert len(client.get("/api/credentials").json()["data"]) == 1
     assert client.delete(f"/api/credentials/{credential_id}").json()["data"] == {"deleted": True}
+    assert client.get("/api/credentials").json()["data"] == []
+
+
+def test_a_compatible_key_with_models_is_checked_by_chat_and_lists_them(client, provider):
+    sign_in_as(client)
+    r = add(client, provider="openai_compatible", base_url="https://gw.example.com/v1", models=["gpt-5.4-mini", "other", "gpt-5.4-mini"])
+    credential = r.json()["data"]
+    assert credential["models"] == ["gpt-5.4-mini", "other"]
+    assert provider.calls == [("chat", KEY, "https://gw.example.com/v1", "gpt-5.4-mini")]
+    models = client.get(f"/api/credentials/{credential['id']}/models").json()["data"]
+    assert models == [{"id": "gpt-5.4-mini", "name": "gpt-5.4-mini"}, {"id": "other", "name": "other"}]
+    assert len(provider.calls) == 1  # the stored list is served without calling the endpoint
+    assert client.get("/api/credentials").json()["data"][0]["models"] == ["gpt-5.4-mini", "other"]
+
+
+def test_a_key_without_models_shows_null(client, provider):
+    sign_in_as(client)
+    assert add(client).json()["data"]["models"] is None
+
+
+@pytest.mark.parametrize("body, status, code", [
+    ({"models": ["claude-sonnet-5-5"]}, 400, "models_not_supported"),
+    ({"provider": "openai_compatible", "base_url": "https://gw.example.com/v1", "models": []}, 422, "validation_error"),
+    ({"provider": "openai_compatible", "base_url": "https://gw.example.com/v1", "models": ["has space"]}, 422, "validation_error"),
+    ({"provider": "openai_compatible", "base_url": "https://gw.example.com/v1", "models": ["m"] * 51}, 422, "validation_error"),
+])
+def test_bad_model_lists_are_refused_before_the_provider_is_called(client, provider, body, status, code):
+    sign_in_as(client)
+    r = add(client, **body)
+    assert (r.status_code, r.json()["error"]["code"]) == (status, code) and provider.calls == []
+
+
+def test_a_failed_chat_check_stores_nothing(client, provider):
+    sign_in_as(client)
+    provider.error = AppError(400, "model_not_available", "The endpoint does not serve the model x.")
+    r = add(client, provider="openai_compatible", base_url="https://gw.example.com/v1", models=["x"])
+    assert (r.status_code, r.json()["error"]["code"]) == (400, "model_not_available")
     assert client.get("/api/credentials").json()["data"] == []

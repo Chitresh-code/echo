@@ -34,15 +34,15 @@ def tokens(usage: dict) -> int:
 
 
 def run_task(client: httpx.Client, task: Task, credential: str, model: str, effort: str) -> dict:
-    ws = client.post("/api/workspaces").raise_for_status().json()["data"]["id"]
+    ws = client.post("/api/agents", json={"name": f"eval {task.name}", "job": "Evaluation task"}).raise_for_status().json()["data"]["id"]
     for path, content in task.seed.items():
-        client.put(f"/api/workspaces/{ws}/file", json={"path": path, "content": content}).raise_for_status()
-    chat = client.post(f"/api/workspaces/{ws}/chats").raise_for_status().json()["data"]["id"]
-    out = {"task": task.name, "workspace": ws, "tools": 0, "tokens": 0, "error": None}
+        client.put(f"/api/agents/{ws}/file", json={"path": path, "content": content}).raise_for_status()
+    chat = client.post(f"/api/agents/{ws}/chats").raise_for_status().json()["data"]["id"]
+    out = {"task": task.name, "agent": ws, "tools": 0, "tokens": 0, "error": None}
     started = time.monotonic()
     for prompt in task.prompts:
         body = {"credential_id": credential, "model": model, "effort": effort, "prompt": prompt}
-        with client.stream("POST", f"/api/workspaces/{ws}/chats/{chat}/turns", json=body, timeout=None) as response:
+        with client.stream("POST", f"/api/agents/{ws}/chats/{chat}/turns", json=body, timeout=None) as response:
             response.raise_for_status()
             events = parse_events(response.iter_lines())
         out["tools"] += sum(1 for name, _ in events if name == "tool")
@@ -58,12 +58,12 @@ def run_task(client: httpx.Client, task: Task, credential: str, model: str, effo
 
 
 def read_file(client: httpx.Client, ws: str, path: str) -> str | None:
-    response = client.get(f"/api/workspaces/{ws}/file", params={"path": path})
+    response = client.get(f"/api/agents/{ws}/file", params={"path": path})
     return response.json()["data"]["content"] if response.status_code == 200 else None
 
 
 def changed_paths(client: httpx.Client, ws: str) -> set[str]:
-    return {f["path"] for f in client.get(f"/api/workspaces/{ws}/git/status").raise_for_status().json()["data"]}
+    return {f["path"] for f in client.get(f"/api/agents/{ws}/git/status").raise_for_status().json()["data"]}
 
 
 def line(result: dict) -> str:

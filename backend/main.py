@@ -7,26 +7,30 @@ from pydantic import BaseModel
 
 from apps.accounts.routers.auth_router import router as auth_router
 from apps.accounts.services.oidc import state_cookie_key
+from apps.agents.routers.agent_router import router as agent_router
 from apps.chat.routers.chat_router import router as chat_router
 from apps.credentials.routers.credential_router import router as credential_router
 from core.auth import check_origin
 from core.config import get_settings
-from apps.workspaces.routers.workspace_router import router as workspace_router
 from core.error_handlers import register_error_handlers
 from core.log_config import setup_logging
 from core.request_id import RequestIdMiddleware
+from core.web_app import WebHeadersMiddleware, serve_web_app
 from core.responses import EnvelopeJSONResponse
 from lifespan import lifespan
 
-# The user guide, plain HTML kept at the repo root next to the backend. The image keeps the same layout.
-DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
+# The user guide, plain HTML kept at the repo root next to the backend, and the built browser app.
+# The image keeps the same layout.
+REPO_DIR = Path(__file__).resolve().parent.parent
+DOCS_DIR = REPO_DIR / "docs"
+WEB_DIR = REPO_DIR / "web" / "dist"
 
 
 class Health(BaseModel):
     status: str
 
 
-def create_app() -> FastAPI:
+def create_app(web_dir: Path | None = None) -> FastAPI:
     # /docs is the user guide, so the generated API reference lives under /api with everything else.
     app = FastAPI(
         title="Echo",
@@ -45,6 +49,7 @@ def create_app() -> FastAPI:
         SessionMiddleware, secret_key=state_cookie_key(settings), session_cookie="echo_signin", max_age=600,
         path="/api/auth", same_site="lax", https_only=settings.public_url.startswith("https://"),
     )
+    app.add_middleware(WebHeadersMiddleware)
     app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
 
@@ -54,10 +59,11 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(credential_router)
-    app.include_router(workspace_router)
+    app.include_router(agent_router)
     app.include_router(chat_router)
 
     app.mount("/docs", StaticFiles(directory=DOCS_DIR, html=True), name="docs")
+    serve_web_app(app, web_dir or WEB_DIR)
     return app
 
 

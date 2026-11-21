@@ -11,7 +11,7 @@ from tests.helpers.accounts import add_key, own, sign_in_as
 from tests.helpers.scripted_model import ScriptedModel
 
 WS, CHAT = "a" * 32, "b" * 32
-TURNS = f"/api/workspaces/{WS}/chats/{CHAT}/turns"
+TURNS = f"/api/agents/{WS}/chats/{CHAT}/turns"
 DONE = {"exit_code": 0, "timed_out": False}
 
 
@@ -71,6 +71,18 @@ def test_turn_streams_text_tools_and_done(monkeypatch, fake_runner):
     assert (get_settings().data_dir / "sessions" / WS).is_dir()
 
 
+def test_a_turn_marks_the_agent_as_used(monkeypatch, fake_runner):
+    from main import create_app
+
+    use_model(monkeypatch, ScriptedModel([[("text", "Hi.")]]))
+    with TestClient(create_app()) as client:
+        user = sign_in_as(client)
+        own(client, user, WS)
+        assert client.get("/api/agents").json()["data"][0]["last_used_at"] is None
+        client.post(TURNS, json=turn("hi", add_key(client, user)))
+        assert client.get("/api/agents").json()["data"][0]["last_used_at"]
+
+
 def test_second_turn_resumes_the_session(monkeypatch, fake_runner):
     model = shell_then_done()
     run_turn(monkeypatch, fake_runner, model)
@@ -108,7 +120,7 @@ def test_staying_on_the_model_keeps_the_reasoning(monkeypatch, client, user, fak
 
 def test_create_chat(client, user, fake_runner):
     own(client, user, WS)
-    chat = client.post(f"/api/workspaces/{WS}/chats").json()["data"]
+    chat = client.post(f"/api/agents/{WS}/chats").json()["data"]
     assert len(chat["id"]) == 32
 
 
@@ -161,9 +173,9 @@ ANY_KEY = "c" * 32
 
 
 @pytest.mark.parametrize("url, body, status, code", [
-    (f"/api/workspaces/{WS}/chats/../turns", turn("hi", ANY_KEY), 404, None),
-    (f"/api/workspaces/{WS}/chats/not-a-chat/turns", turn("hi", ANY_KEY), 400, "invalid_chat_id"),
-    (f"/api/workspaces/bad/chats/{CHAT}/turns", turn("hi", ANY_KEY), 400, "invalid_workspace_id"),
+    (f"/api/agents/{WS}/chats/../turns", turn("hi", ANY_KEY), 404, None),
+    (f"/api/agents/{WS}/chats/not-a-chat/turns", turn("hi", ANY_KEY), 400, "invalid_chat_id"),
+    (f"/api/agents/bad/chats/{CHAT}/turns", turn("hi", ANY_KEY), 400, "invalid_agent_id"),
     (TURNS, turn("", ANY_KEY), 422, "validation_error"),
     (TURNS, {"prompt": "hi", "model": "claude-sonnet-5-5"}, 422, "validation_error"),
     (TURNS, turn("hi", ANY_KEY, model="has space"), 422, "validation_error"),
@@ -178,9 +190,9 @@ def test_bad_requests_are_refused_before_any_command(client, user, fake_runner, 
     assert fake_runner.requests == []
 
 
-def test_missing_workspace_is_404(client, fake_runner):
+def test_missing_agent_is_404(client, fake_runner):
     response = client.post(TURNS, json=turn("hi", ANY_KEY))
-    assert response.status_code == 404 and response.json()["error"]["code"] == "workspace_not_found"
+    assert response.status_code == 404 and response.json()["error"]["code"] == "agent_not_found"
 
 
 def test_busy_chat_is_409(client, user, fake_runner):

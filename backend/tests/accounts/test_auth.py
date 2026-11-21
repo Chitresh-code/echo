@@ -76,7 +76,7 @@ def test_login_redirects_to_the_tenant_with_pkce(client, microsoft):
 
 def test_sign_in_creates_a_user_and_a_session(client, microsoft):
     r = sign_in(client, microsoft)
-    assert r.status_code == 302 and r.headers["location"] == "/api/docs"
+    assert r.status_code == 302 and r.headers["location"] == "/"
     cookie = next(c for c in r.headers.get_list("set-cookie") if c.startswith("echo_session="))
     assert "HttpOnly" in cookie and "SameSite=lax" in cookie and "Path=/" in cookie and "Secure" not in cookie
     # The PKCE verifier went to the token exchange.

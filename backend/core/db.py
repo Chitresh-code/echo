@@ -2,11 +2,14 @@
 AsyncSession through the `db` dependency."""
 
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Annotated
 
 from alembic import command
 from alembic.config import Config
 from fastapi import Request
+from pydantic import AfterValidator
 from sqlalchemy import MetaData, event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
@@ -42,3 +45,12 @@ async def db(request: Request) -> AsyncIterator[AsyncSession]:
 
 # Table definitions the repositories query. The migrations, not this, create and change the schema.
 metadata = MetaData()
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
+# SQLite keeps no time zone, so stored times come back naive. They were written in UTC, and API
+# responses must say so, or a browser reads them as its own local time.
+UtcDateTime = Annotated[datetime, AfterValidator(_as_utc)]

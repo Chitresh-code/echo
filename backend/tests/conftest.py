@@ -41,6 +41,15 @@ def settings_env(monkeypatch, tmp_path, request):
     get_settings.cache_clear()
 
 
+@pytest.fixture(autouse=True)
+def _no_local_web_build(settings_env, monkeypatch, tmp_path):
+    # Imported after the settings, since importing main builds an app. A web/dist built on this machine would add the app's catch-all route; tests that want it
+    # pass their own build to create_app.
+    import main
+
+    monkeypatch.setattr(main, "WEB_DIR", tmp_path / "no-web-build")
+
+
 @pytest.fixture
 def app():
     from main import create_app

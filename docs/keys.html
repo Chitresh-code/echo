@@ -14,7 +14,7 @@
       <a href="getting-started.html">Getting started</a>
       <a href="signing-in.html">Signing in</a>
       <a href="keys.html">Keys</a>
-      <a href="workspaces.html">Workspaces</a>
+      <a href="agents.html">Agents</a>
       <a href="chat.html">Chat</a>
       <a href="/api/docs">API reference</a>
     </nav>
@@ -28,9 +28,14 @@
       <li><code>google</code>: a Gemini API key from Google AI Studio.</li>
       <li><code>openai_compatible</code>: any service with an OpenAI-compatible API, such as OpenRouter or a hosted inference service, at its <code>https</code> address.</li>
     </ul>
-    <p>Your keys are yours: nobody else signed in to Echo can see, use or delete them. The examples assume you set <code>$ECHO</code> as on the <a href="signing-in.html">Signing in</a> page.</p>
+    <p>Your keys are yours: nobody else signed in to Echo can see, use or delete them.</p>
 
-    <h2>Add a key</h2>
+    <h2>The Credentials page</h2>
+    <p>Credentials, in the top bar, lists your keys with their provider, the last four characters of the key and when you added it. Models shows the models a key can use, and the bin deletes it after asking. Add a key at the bottom: pick the provider, give the key a label you will recognize and paste the key. For an OpenAI-compatible service, also give its address and, if it has no list of models, the model ids to use (see below).</p>
+
+    <h2>From the API</h2>
+    <p>The examples assume you set <code>$ECHO</code> as on the <a href="signing-in.html">Signing in</a> page.</p>
+    <h3>Add a key</h3>
     <pre><code>curl -b "$ECHO" -X POST http://localhost:8000/api/credentials \
   -H 'content-type: application/json' \
   -d '{"provider": "anthropic", "label": "Work", "api_key": "your key"}'</code></pre>
@@ -38,15 +43,21 @@
     <pre><code>  -d '{"provider": "openai_compatible", "label": "OpenRouter", "api_key": "your key", "base_url": "https://openrouter.ai/api/v1"}'</code></pre>
     <p>Echo checks the key by asking the provider for its models, and stores it only if that works. The answer holds the key's <code>id</code>, which you use when you chat. The key itself is stored encrypted and is never shown again; answers show only its last four characters as <code>key_hint</code>, or nothing for a short key.</p>
 
-    <h2>See your keys and their models</h2>
+    <h3>See your keys and their models</h3>
     <ul>
       <li><code>GET /api/credentials</code> lists your keys, newest first.</li>
-      <li><code>GET /api/credentials/{id}/models</code> lists the models the key can use, asked live from the provider. Use one of these <code>id</code> values as the model when you chat.</li>
+      <li><code>GET /api/credentials/{id}/models</code> lists the models the key can use, asked live from the provider, or the list you gave for a compatible service. Use one of these <code>id</code> values as the model when you chat.</li>
       <li><code>DELETE /api/credentials/{id}</code> removes a key. To replace a key, add the new one and delete the old one.</li>
     </ul>
 
     <h2>Compatible services</h2>
     <p>Because Echo calls the address you give it, the address is checked first. It must start with <code>https://</code> and have no user name, password, <code>?</code> or <code>#</code> in it. When Echo connects, it refuses any address that is not on the public internet: your own machine (<code>localhost</code>), your home or office network, and cloud metadata addresses. A model you run yourself on your machine or network, such as Ollama, cannot be used for that reason.</p>
+
+    <h2>Services without a model list</h2>
+    <p>Some compatible services, such as company gateways, answer chat requests but cannot list their models, and a key for one is refused with <code>provider_error</code>. Give such a key the model ids to use, up to 50, separated by commas in the Models field, or as <code>models</code> from the API:</p>
+    <pre><code>  -d '{"provider": "openai_compatible", "label": "Gateway", "api_key": "your key",
+       "base_url": "https://gateway.example.com/v1", "models": ["gpt-5.4-mini"]}'</code></pre>
+    <p>Echo then checks the key with one short chat request to the first model, which costs a fraction of a cent, and offers only these models. Put a chat model first: an embedding model cannot answer a chat request.</p>
 
     <h2>When something goes wrong</h2>
     <ul>
@@ -54,6 +65,8 @@
       <li><code>endpoint_not_allowed</code>: the service's address is on a private network or your own machine.</li>
       <li><code>invalid_base_url</code>: the address is not an <code>https</code> address, or has parts Echo does not accept. Only <code>openai_compatible</code> keys take a <code>base_url</code>.</li>
       <li><code>provider_error</code>: the provider did not answer as expected. Try again later; the <code>request_id</code> finds the details in Echo's log.</li>
+      <li><code>model_not_available</code>: the service does not serve the first model in your list. Check its id.</li>
+      <li><code>models_not_supported</code>: only <code>openai_compatible</code> keys take a list of models.</li>
       <li><code>credential_not_found</code>: there is no key of yours with that id.</li>
       <li><code>credential_unreadable</code>: Echo can no longer decrypt the key, because the server's secret was changed. Add the key again.</li>
     </ul>

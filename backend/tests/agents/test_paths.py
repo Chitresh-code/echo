@@ -1,6 +1,6 @@
 import pytest
 
-from apps.workspaces.services.paths import check_workspace_id, safe_relpath
+from apps.agents.services.paths import check_agent_id, safe_relpath
 from core.errors import AppError
 
 
@@ -17,7 +17,7 @@ def test_safe_relpath_rejects(path):
 
 
 @pytest.mark.parametrize("bad", ["", "A" * 32, "a" * 31, "a" * 33, "g" * 32, "../" + "a" * 29])
-def test_workspace_id_rejects(bad):
+def test_agent_id_rejects(bad):
     with pytest.raises(AppError):
-        check_workspace_id(bad)
-    assert check_workspace_id("0123456789abcdef" * 2)
+        check_agent_id(bad)
+    assert check_agent_id("0123456789abcdef" * 2)

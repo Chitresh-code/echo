@@ -20,11 +20,18 @@ async def add(settings: Settings, db: AsyncSession, owner_id: str, new: NewCrede
         raise AppError(400, "invalid_base_url", "Only openai_compatible keys take a base_url.")
     else:
         base_url = None
-    # Listing models proves the key works before it is stored.
-    await providers.list_models(new.provider, key, base_url)
+    if new.models is not None and new.provider != "openai_compatible":
+        raise AppError(400, "models_not_supported", "Only openai_compatible keys take a model list; other providers list their own.")
+    models = list(dict.fromkeys(new.models)) if new.models else None
+    # The key is proven to work before it is stored: by a one-token chat when the user named the
+    # models (the endpoint may have no model list), else by listing the provider's models.
+    if models:
+        await providers.check_chat(key, base_url, models[0])
+    else:
+        await providers.list_models(new.provider, key, base_url)
     # A short key would give away too much of itself in four characters.
     hint = key[-4:] if len(key) >= 16 else ""
-    credential = await credentials.add(db, owner_id, new.provider, new.label, base_url, hint, crypto.encrypt(settings, key))
+    credential = await credentials.add(db, owner_id, new.provider, new.label, base_url, hint, crypto.encrypt(settings, key), models)
     await db.commit()
     return credential
 
@@ -44,6 +51,8 @@ async def with_key(settings: Settings, db: AsyncSession, owner_id: str, credenti
 
 async def list_models(settings: Settings, db: AsyncSession, owner_id: str, credential_id: str) -> list[ProviderModel]:
     credential, key = await with_key(settings, db, owner_id, credential_id)
+    if credential.models:
+        return [ProviderModel(id=m, name=m) for m in credential.models]
     return await providers.list_models(credential.provider, key, credential.base_url)
 
 

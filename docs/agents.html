@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agents - Echo docs</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <a class="brand" href="./">Echo</a>
+      <a href="./">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="signing-in.html">Signing in</a>
+      <a href="keys.html">Keys</a>
+      <a href="agents.html">Agents</a>
+      <a href="chat.html">Chat</a>
+      <a href="/api/docs">API reference</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Agents</h1>
+    <p>An agent is something you create to do one job for you, such as "triage new bug reports" or "keep the release notes current". You show it the job in a chat and correct it, and what it learns stays with that agent. Each agent has its own workspace: a folder with its own git repository where it keeps its files, notes and the workflows it learns. Everything that happens in the workspace runs inside that agent's jail, so nothing in one agent can reach another.</p>
+    <p>Your agents belong to you: nobody else signed in to Echo can see or use them.</p>
+
+    <h2>Your agents</h2>
+    <p>The Agents page, the first page after you sign in, lists your agents with their name, their job and when you last used them, most recently used first. Search filters the list by name or job.</p>
+    <ul>
+      <li><strong>New agent</strong> asks for a name (up to 80 characters) and the job it does (up to 500), then opens the agent.</li>
+      <li>The pencil on an agent changes its name or job.</li>
+    </ul>
+    <p>Agents cannot be deleted yet.</p>
+
+    <h2>An agent's page</h2>
+    <p>Opening an agent shows three panels: the files on the left, the editor in the middle and the <a href="chat.html">chat</a> on the right. On a narrow window they stack.</p>
+    <ul>
+      <li><strong>Explorer</strong>: every file and folder in the workspace. Files changed since the last commit carry git's letter: <code>M</code> modified, <code>U</code> new, <code>D</code> deleted. The count of changed files shows next to the agent's name. The new-file button creates a file; refresh reloads the list, which also happens after every chat turn.</li>
+      <li><strong>Editor</strong>: open files in tabs, edit them and save with the Save button or Ctrl+S (Cmd+S on a Mac). A tab with unsaved edits is marked, and the browser warns before you leave with unsaved edits. Files that are not text show as "Binary file, not shown".</li>
+      <li><strong>Diff</strong>: for a changed file, Diff shows the last commit next to the file as it is now. A new file is compared with an empty one.</li>
+    </ul>
+    <p>If the agent changes a file you have open with unsaved edits, your text stays and the editor says the file changed on disk, with a button to reload it.</p>
+
+    <h2>From the API</h2>
+    <p>Everything on these screens is also in the <a href="/api/docs">API reference</a>. The examples assume <code>$ECHO</code> holds your session cookie, as on the <a href="signing-in.html">Signing in</a> page.</p>
+    <pre><code>curl -b "$ECHO" -X POST http://localhost:8000/api/agents \
+  -H 'content-type: application/json' \
+  -d '{"name": "Release notes", "job": "Keep CHANGELOG.md current from merged work"}'</code></pre>
+    <ul>
+      <li><code>GET /api/agents</code> lists your agents, most recently used first; <code>GET /api/agents/{id}</code> returns one, and <code>PATCH /api/agents/{id}</code> with <code>name</code> or <code>job</code> changes it.</li>
+      <li><code>GET /api/agents/{id}/tree</code> lists every file and folder except <code>.git</code>, at most 5000 entries.</li>
+      <li><code>GET /api/agents/{id}/file?path=src/app.py</code> reads a file. Text comes back as is; a file that is not UTF-8 text comes back base64 encoded, and the answer says which.</li>
+      <li><code>PUT /api/agents/{id}/file</code> with <code>{"path": "src/app.py", "content": "..."}</code> saves a text file and creates any folders it needs.</li>
+      <li><code>GET /api/agents/{id}/git/status</code> lists the files changed since the last commit, and <code>GET /api/agents/{id}/git/file?path=...</code> returns a file as it was in the last commit and as it is now.</li>
+    </ul>
+    <p>Paths are relative to the workspace, such as <code>src/app.py</code>. A path that starts with <code>/</code> or uses <code>..</code> is refused. Files larger than 5 MB cannot be read or saved this way.</p>
+
+    <h2>When something goes wrong</h2>
+    <p>Every error has a <code>code</code> you can act on, such as <code>file_not_found</code>, <code>invalid_path</code>, <code>file_too_large</code> or <code>agent_not_found</code> (also the answer for someone else's agent), and a <code>request_id</code> to quote when you report a problem.</p>
+  </main>
+</body>
+</html>

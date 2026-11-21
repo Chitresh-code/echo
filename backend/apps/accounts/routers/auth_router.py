@@ -15,8 +15,8 @@ from core.errors import AppError
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-# Until there is a UI, signing in lands on the API reference, where the session cookie is used.
-AFTER_SIGN_IN = "/api/docs"
+# Signing in lands on the browser app, which opens on the agents list.
+AFTER_SIGN_IN = "/"
 SIGN_IN_FAILED = "/docs/signing-in.html"
 
 

@@ -1,5 +1,6 @@
-"""Workspace operations. Every one runs through the runner, inside the workspace's jail, so a path
-or symlink in a workspace can never reach anything outside it."""
+"""Agent operations. An agent's files are its workspace, a git repository on the sandbox volume named
+by the agent id. Every file operation runs through the runner, inside that workspace's jail, so a
+path or symlink in it can never reach anything outside it."""
 
 import base64
 import logging
@@ -9,18 +10,20 @@ import uuid
 from sqlalchemy.ext.asyncio import AsyncSession
 from strands.sandbox.errors import SandboxPathNotFoundError
 
-from apps.workspaces.models.workspace import (
+from apps.agents.models.agent import (
     MAX_FILE_BYTES,
+    Agent,
+    AgentUpdate,
     FileContent,
     GitFileStatus,
     GitFileVersions,
+    NewAgent,
     Tree,
     TreeEntry,
-    Workspace,
 )
-from apps.workspaces.repositories import workspaces
-from apps.workspaces.services.git_status import parse_porcelain
-from apps.workspaces.services.paths import check_workspace_id, safe_relpath
+from apps.agents.repositories import agents
+from apps.agents.services.git_status import parse_porcelain
+from apps.agents.services.paths import check_agent_id, safe_relpath
 from core.config import Settings
 from core.errors import AppError
 from sandbox.runner_sandbox import RunnerSandbox, raise_for_runner_error, runner_client
@@ -33,8 +36,8 @@ _TYPES = {"f": "file", "d": "dir", "l": "link"}
 _MISSING, _TOO_LARGE = 77, 78
 
 
-def _sandbox(settings: Settings, workspace_id: str) -> RunnerSandbox:
-    return RunnerSandbox(check_workspace_id(workspace_id), settings.runner_socket, settings.command_timeout)
+def _sandbox(settings: Settings, agent_id: str) -> RunnerSandbox:
+    return RunnerSandbox(check_agent_id(agent_id), settings.runner_socket, settings.command_timeout)
 
 
 def _content(data: bytes) -> FileContent:
@@ -54,22 +57,37 @@ def _failed(result, what: str) -> AppError:
     return AppError(500, "command_failed", f"The workspace could not {what}.")
 
 
-async def create_workspace(settings: Settings, db: AsyncSession, owner_id: str) -> Workspace:
-    workspace_id = uuid.uuid4().hex
+async def create_agent(settings: Settings, db: AsyncSession, owner_id: str, new: NewAgent) -> Agent:
+    agent_id = uuid.uuid4().hex
     # The runner first: a failed insert leaves an unused folder, never a row pointing at nothing.
     async with runner_client(settings.runner_socket) as client:
-        await raise_for_runner_error(await client.post(f"/workspaces/{workspace_id}"))
-    await workspaces.add(db, workspace_id, owner_id)
+        await raise_for_runner_error(await client.post(f"/workspaces/{agent_id}"))
+    agent = await agents.add(db, agent_id, owner_id, new.name, new.job)
     await db.commit()
-    return Workspace(id=workspace_id)
+    return agent
 
 
-async def list_workspaces(db: AsyncSession, owner_id: str) -> list[Workspace]:
-    return [Workspace(id=i) for i in await workspaces.list_for(db, owner_id)]
+async def list_agents(db: AsyncSession, owner_id: str) -> list[Agent]:
+    return await agents.list_for(db, owner_id)
 
 
-async def tree(settings: Settings, workspace_id: str) -> Tree:
-    sandbox = _sandbox(settings, workspace_id)
+async def get_agent(db: AsyncSession, owner_id: str, agent_id: str) -> Agent:
+    agent = await agents.get(db, agent_id, owner_id)
+    if agent is None:
+        raise _not_found()
+    return agent
+
+
+async def update_agent(db: AsyncSession, owner_id: str, agent_id: str, change: AgentUpdate) -> Agent:
+    fields = change.model_dump(exclude_none=True)
+    if fields:
+        await agents.update(db, agent_id, owner_id, fields)
+        await db.commit()
+    return await get_agent(db, owner_id, agent_id)
+
+
+async def tree(settings: Settings, agent_id: str) -> Tree:
+    sandbox = _sandbox(settings, agent_id)
     # One more than the cap, so a full tree can be told apart from a cut one.
     result = await sandbox.execute(
         f"find . -mindepth 1 -path ./.git -prune -o -printf '%y %P\\0' | head -z -n {MAX_TREE_ENTRIES + 1}"
@@ -98,15 +116,15 @@ async def _read_working(sandbox: RunnerSandbox, rel: str, missing_ok: bool = Fal
         raise AppError(403, "permission_denied", "The file cannot be read.") from None
 
 
-async def read_file(settings: Settings, workspace_id: str, path: str) -> FileContent:
-    return await _read_working(_sandbox(settings, workspace_id), safe_relpath(path))
+async def read_file(settings: Settings, agent_id: str, path: str) -> FileContent:
+    return await _read_working(_sandbox(settings, agent_id), safe_relpath(path))
 
 
-async def write_file(settings: Settings, workspace_id: str, path: str, content: str) -> None:
+async def write_file(settings: Settings, agent_id: str, path: str, content: str) -> None:
     data = content.encode("utf-8")
     if len(data) > MAX_FILE_BYTES:
         raise _too_large()
-    sandbox = _sandbox(settings, workspace_id)
+    sandbox = _sandbox(settings, agent_id)
     rel = safe_relpath(path)
     try:
         await sandbox.write_file(f"{sandbox.root}/{rel}", data)
@@ -114,15 +132,15 @@ async def write_file(settings: Settings, workspace_id: str, path: str, content: 
         raise AppError(400, "write_failed", "The file could not be saved. Check the path is not a directory.") from None
 
 
-async def git_status(settings: Settings, workspace_id: str) -> list[GitFileStatus]:
-    result = await _sandbox(settings, workspace_id).execute("git status --porcelain=v1 -z --untracked-files=all")
+async def git_status(settings: Settings, agent_id: str) -> list[GitFileStatus]:
+    result = await _sandbox(settings, agent_id).execute("git status --porcelain=v1 -z --untracked-files=all")
     if result.exit_code != 0:
         raise _failed(result, "read its git status")
     return parse_porcelain(result.stdout)
 
 
-async def git_file_versions(settings: Settings, workspace_id: str, path: str) -> GitFileVersions:
-    sandbox = _sandbox(settings, workspace_id)
+async def git_file_versions(settings: Settings, agent_id: str, path: str) -> GitFileVersions:
+    sandbox = _sandbox(settings, agent_id)
     rel = safe_relpath(path)
     obj = shlex.quote(f"HEAD:{rel}")
     # base64 so binary content survives the text stream.
@@ -138,9 +156,13 @@ async def git_file_versions(settings: Settings, workspace_id: str, path: str) ->
     return GitFileVersions(head=head, working=await _read_working(sandbox, rel, missing_ok=True))
 
 
-async def require_workspace(db: AsyncSession, owner_id: str, workspace_id: str) -> str:
-    check_workspace_id(workspace_id)
-    # Someone else's workspace answers exactly like a missing one, so ids cannot be probed.
-    if not await workspaces.owns(db, workspace_id, owner_id):
-        raise AppError(404, "workspace_not_found", "There is no workspace with this id.")
-    return workspace_id
+def _not_found() -> AppError:
+    return AppError(404, "agent_not_found", "There is no agent with this id.")
+
+
+async def require_agent(db: AsyncSession, owner_id: str, agent_id: str) -> str:
+    check_agent_id(agent_id)
+    # Someone else's agent answers exactly like a missing one, so ids cannot be probed.
+    if not await agents.owns(db, agent_id, owner_id):
+        raise _not_found()
+    return agent_id
