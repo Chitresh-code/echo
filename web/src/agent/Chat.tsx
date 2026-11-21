@@ -1,8 +1,9 @@
 import AddComment from '@mui/icons-material/AddComment'
+import AutoStories from '@mui/icons-material/AutoStories'
 import ArrowUpward from '@mui/icons-material/ArrowUpward'
 import Stop from '@mui/icons-material/Stop'
 import Terminal from '@mui/icons-material/Terminal'
-import { Alert, Box, IconButton, InputBase, Tooltip, Typography } from '@mui/material'
+import { Alert, Box, IconButton, InputBase, Link, Tooltip, Typography } from '@mui/material'
 import { useEffect, useRef, useState } from 'react'
 import { api, errorText } from '../api/client'
 import { streamTurn, type TurnEvent } from '../api/stream'
@@ -12,10 +13,11 @@ import { MONO } from '../theme'
 import { Markdown } from './Markdown'
 import { ModelPicker, useModelChoice } from './ModelPicker'
 
-type Part = { kind: 'text'; text: string } | { kind: 'tool'; id: string; name: string }
+type Part = { kind: 'text'; text: string } | { kind: 'tool'; id: string; name: string; skill?: string }
 type Message =
   | { role: 'user'; text: string }
-  | { role: 'agent'; parts: Part[]; usage?: Usage; seconds?: number; error?: string; stopped?: boolean }
+  | { role: 'agent'; parts: Part[]; usage?: Usage; learned?: string[]; seconds?: number; error?: string; stopped?: boolean }
+type AgentMessage = Extract<Message, { role: 'agent' }>
 
 const chatKey = (agentId: string) => `echo.chat.${agentId}`
 
@@ -37,7 +39,7 @@ function storeChat(agentId: string, chatId: string | null) {
 }
 
 /** Adds one stream event to the agent's message: text joins the text before it, each tool gets a row. */
-function apply(message: Extract<Message, { role: 'agent' }>, event: TurnEvent): Message {
+export function apply(message: AgentMessage, event: TurnEvent): AgentMessage {
   const parts = [...message.parts]
   const last = parts.at(-1)
   switch (event.event) {
@@ -47,14 +49,16 @@ function apply(message: Extract<Message, { role: 'agent' }>, event: TurnEvent): 
       return { ...message, parts }
     case 'tool':
       return { ...message, parts: [...parts, { kind: 'tool' as const, id: event.data.id, name: event.data.name }] }
+    case 'skill':
+      return { ...message, parts: parts.map((p) => (p.kind === 'tool' && p.id === event.data.id ? { ...p, skill: event.data.name } : p)) }
     case 'done':
-      return { ...message, usage: event.data.usage }
+      return { ...message, usage: event.data.usage, learned: event.data.learned }
     case 'error':
       return { ...message, error: `${event.data.message} (${event.data.code}${event.data.request_id ? `, request ${event.data.request_id}` : ''})` }
   }
 }
 
-export function Chat({ agentId, onTurnDone }: { agentId: string; onTurnDone: () => void }) {
+export function Chat({ agentId, onTurnDone, onOpen }: { agentId: string; onTurnDone: () => void; onOpen: (path: string) => void }) {
   const [messages, setMessages] = useState<Message[]>([])
   const [chatId, setChatId] = useState<string | null>(() => storedChat(agentId))
   const [draft, setDraft] = useState('')
@@ -145,10 +149,22 @@ export function Chat({ agentId, onTurnDone }: { agentId: string; onTurnDone: () 
                   <Markdown key={j} text={p.text} />
                 ) : (
                   <Box key={p.id} sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.25, py: 0.75, border: 1, borderColor: 'divider', borderRadius: '8px', bgcolor: 'background.default', fontSize: 12 }}>
-                    <Terminal sx={{ fontSize: 14, color: 'text.secondary' }} />
+                    {p.skill !== undefined ? <AutoStories sx={{ fontSize: 14, color: 'primary.main' }} /> : <Terminal sx={{ fontSize: 14, color: 'text.secondary' }} />}
                     <Box component="span" sx={{ fontFamily: MONO, color: 'text.secondary', fontWeight: 600 }}>{p.name}</Box>
+                    {p.skill && <Box component="span" sx={{ color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>used {p.skill}</Box>}
                   </Box>
                 ),
+              )}
+              {m.learned && m.learned.length > 0 && (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.75, px: 1.25, py: 0.75, borderRadius: '8px', bgcolor: 'var(--accentSoft)', fontSize: 12 }}>
+                  <AutoStories sx={{ fontSize: 14, color: 'primary.main' }} />
+                  <span>Learned:</span>
+                  {m.learned.map((name) => (
+                    <Link key={name} component="button" type="button" onClick={() => onOpen(`.agent/skills/${name}/SKILL.md`)} sx={{ fontFamily: MONO, fontSize: 12 }}>
+                      {name}
+                    </Link>
+                  ))}
+                </Box>
               )}
               {i === messages.length - 1 && running && <Typography color="text.secondary" sx={{ fontSize: 12 }}>Working…</Typography>}
               {m.error && <Alert severity="error" sx={{ fontSize: 13 }}>{m.error}</Alert>}

@@ -4,11 +4,12 @@ turn time limit and a client disconnect can both stop it cleanly, wherever the s
 import asyncio
 import logging
 import threading
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 
 from strands import Agent
 
-from apps.chat.services.sse import message, to_sse
+from apps.agents.services.knowledge_service import changed_skills
+from apps.chat.services.sse import done_data, message, to_sse
 from core.request_id import current
 
 logger = logging.getLogger(__name__)
@@ -17,21 +18,47 @@ logger = logging.getLogger(__name__)
 # turns never write the same session at once.
 # shortcut: in memory and per process, so it only holds with one api worker; move to a shared lock when the api runs more than one.
 _busy: set[str] = set()
+# Path to checksum of every file under the workspace's skills folder.
+Snapshot = Callable[[], Awaitable[dict[str, str]]]
 
 
 def is_busy(chat_key: str) -> bool:
     return chat_key in _busy
 
 
-async def _run(make_agent: Callable[[], Agent], prompt: str, timeout: int, cancel: threading.Event, queue: asyncio.Queue) -> None:
+async def _hashes(snapshot: Snapshot | None) -> dict[str, str] | None:
+    if snapshot is None:
+        return None
+    try:
+        return await snapshot()
+    except Exception:
+        # Only the Learned line depends on it, so a failure leaves that out and the turn goes on.
+        logger.warning("Could not read the skills' checksums", exc_info=True)
+        return None
+
+
+async def _run(
+    make_agent: Callable[[], Agent], prompt: str, timeout: int, cancel: threading.Event, queue: asyncio.Queue, snapshot: Snapshot | None
+) -> None:
     seen_tools: set[str] = set()
     try:
         async with asyncio.timeout(timeout):
+            before = await _hashes(snapshot)
+            done = None
             # Leaving the block shuts the agent down, which saves pending memory.
             async with make_agent() as agent:
                 async for event in agent.stream_async(prompt, cancel_signal=cancel):
-                    if sse := to_sse(event, seen_tools):
+                    if "result" in event:
+                        # Held until the skills are compared, so done stays the last event.
+                        done = done_data(event["result"])
+                    elif sse := to_sse(event, seen_tools):
                         await queue.put(sse)
+                # Inside the block, so done is not held back while the agent saves its memory.
+                if done is not None:
+                    after = await _hashes(snapshot) if before is not None else None
+                    if after is not None:
+                        done["learned"] = changed_skills(before, after)
+                    await queue.put(message("done", done))
     except TimeoutError:
         logger.warning("Turn stopped at its %s second limit", timeout)
         await queue.put(message("error", {"code": "turn_timeout", "message": "The turn ran past its time limit and was stopped."}))
@@ -43,7 +70,9 @@ async def _run(make_agent: Callable[[], Agent], prompt: str, timeout: int, cance
         await queue.put(None)
 
 
-async def stream_turn(chat_key: str, make_agent: Callable[[], Agent], prompt: str, timeout: int) -> AsyncIterator[str]:
+async def stream_turn(
+    chat_key: str, make_agent: Callable[[], Agent], prompt: str, timeout: int, snapshot: Snapshot | None = None
+) -> AsyncIterator[str]:
     # The router already refused a busy chat; this check covers two requests racing past it.
     if chat_key in _busy:
         yield message("error", {"code": "chat_busy", "message": "This chat already has a turn in progress."})
@@ -51,7 +80,7 @@ async def stream_turn(chat_key: str, make_agent: Callable[[], Agent], prompt: st
     _busy.add(chat_key)
     cancel = threading.Event()
     queue: asyncio.Queue = asyncio.Queue()
-    task = asyncio.create_task(_run(make_agent, prompt, timeout, cancel, queue))
+    task = asyncio.create_task(_run(make_agent, prompt, timeout, cancel, queue, snapshot))
     task.add_done_callback(lambda _: _busy.discard(chat_key))
     try:
         while (item := await queue.get()) is not None:

@@ -1,4 +1,4 @@
-"""Against the real runner and real jails: run with `docker compose --profile test run --rm api-test`."""
+"""Against the real runner and real jails: run with `docker compose -f compose.test.yml run --rm api-test`."""
 
 import asyncio
 import base64
@@ -102,3 +102,27 @@ def test_versions_before_the_first_commit(client, ws):
     save(client, ws, "a.txt", "a")
     got = data(client.get(f"/api/agents/{ws}/git/file", params={"path": "a.txt"}))
     assert got["head"] is None and got["working"]["content"] == "a"
+
+
+def test_skills_are_read_from_the_jail(client, ws):
+    assert data(client.get(f"/api/agents/{ws}/skills")) == {"skills": [], "truncated": False}
+    save(client, ws, ".agent/skills/weekly-report/SKILL.md", "---\nname: weekly-report\ndescription: Use for the weekly report.\n---\n1. Run it.\n")
+    save(client, ws, ".agent/skills/odd name/notes.txt", "no SKILL.md here")
+    run(ws, "mkdir -p .agent/skills/lower && printf -- '---\\nname: lower\\ndescription: d\\n---\\n' > .agent/skills/lower/skill.md")
+    skills = {s["name"]: s for s in data(client.get(f"/api/agents/{ws}/skills"))["skills"]}
+    assert skills["weekly-report"]["status"] == "ok" and skills["weekly-report"]["description"] == "Use for the weekly report."
+    assert skills["odd name"]["status"] == "skipped" and skills["lower"]["status"] == "ok"
+
+
+def test_skill_checksums_see_edits_even_when_committed(ws):
+    from apps.agents.services.knowledge_service import changed_skills, skill_hashes
+
+    def hashes():
+        return asyncio.run(skill_hashes(get_settings(), ws))
+
+    assert hashes() == {}
+    run(ws, "mkdir -p '.agent/skills/my report' && echo one > '.agent/skills/my report/SKILL.md'")
+    before = hashes()
+    assert list(before) == [".agent/skills/my report/SKILL.md"]
+    run(ws, "echo two > '.agent/skills/my report/SKILL.md' && git add -A && git -c user.name=t -c user.email=t@t commit -qm x")
+    assert changed_skills(before, hashes()) == ["my report"]

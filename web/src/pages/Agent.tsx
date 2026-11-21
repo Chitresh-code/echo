@@ -1,4 +1,4 @@
-import { Alert, Box, Link, Typography } from '@mui/material'
+import { Alert, Box, Link, Tab, Tabs, Typography } from '@mui/material'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link as RouterLink, useParams } from 'react-router'
 import { api, ApiError, errorText } from '../api/client'
@@ -6,6 +6,7 @@ import type { Agent as AgentRecord, GitFileStatus, Tree } from '../api/types'
 import { Chat } from '../agent/Chat'
 import { Editor } from '../agent/Editor'
 import { Explorer } from '../agent/Explorer'
+import { Notes, Skills } from '../agent/Knowledge'
 import { useOpenFiles } from '../agent/files'
 import { statusLetters } from '../agent/tree'
 import { TopBar } from '../layout/TopBar'
@@ -24,6 +25,9 @@ function AgentPage({ agentId }: { agentId: string }) {
   const [statuses, setStatuses] = useState<GitFileStatus[]>([])
   const [error, setError] = useState('')
   const files = useOpenFiles(agentId)
+  const [tab, setTab] = useState<'files' | 'skills' | 'notes'>('files')
+  // Bumped after each turn, so the skills and notes the agent changed show up.
+  const [version, setVersion] = useState(0)
   const letters = useMemo(() => statusLetters(statuses), [statuses])
 
   const refreshTree = useCallback(async () => {
@@ -54,7 +58,10 @@ function AgentPage({ agentId }: { agentId: string }) {
   const afterTurn = useCallback(() => {
     refreshTree()
     refresh()
+    setVersion((v) => v + 1)
   }, [refreshTree, refresh])
+
+  const openFile = (path: string) => files.open(path, letters.has(path))
 
   async function create(path: string) {
     try {
@@ -100,13 +107,22 @@ function AgentPage({ agentId }: { agentId: string }) {
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ borderRadius: 0 }}>{error}</Alert>}
       <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
         <Box sx={{ ...panel, width: { md: 248 }, flexShrink: 0, borderRight: { md: 1 }, borderBottom: { xs: 1, md: 0 }, bgcolor: 'background.paper', minHeight: { xs: 240, md: 0 } }}>
-          <Explorer tree={tree} letters={letters} active={files.active} onOpen={(p) => files.open(p, letters.has(p))} onRefresh={afterTurn} onCreate={create} />
+          <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+            <Tabs value={tab} onChange={(_, t) => setTab(t)} variant="fullWidth" sx={{ minHeight: 36, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 36, py: 0, fontSize: 12, textTransform: 'none' } }}>
+              <Tab value="files" label="Files" />
+              <Tab value="skills" label="Skills" />
+              <Tab value="notes" label="Notes" />
+            </Tabs>
+            {tab === 'files' && <Explorer tree={tree} letters={letters} active={files.active} onOpen={openFile} onRefresh={afterTurn} onCreate={create} />}
+            {tab === 'skills' && <Skills agentId={agentId} version={version} onOpen={openFile} />}
+            {tab === 'notes' && <Notes agentId={agentId} version={version} />}
+          </Box>
         </Box>
         <Box sx={{ ...panel, flexGrow: 1, minWidth: 0 }}>
           <Editor agentId={agentId} files={files} letters={letters} />
         </Box>
         <Box sx={{ ...panel, width: { md: 400 }, flexShrink: 0, borderLeft: { md: 1 }, borderTop: { xs: 1, md: 0 } }}>
-          <Chat agentId={agentId} onTurnDone={afterTurn} />
+          <Chat agentId={agentId} onTurnDone={afterTurn} onOpen={openFile} />
         </Box>
       </Box>
     </Box>

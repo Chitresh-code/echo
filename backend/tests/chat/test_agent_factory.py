@@ -40,7 +40,7 @@ def test_build_agent(monkeypatch):
     assert "Read AGENTS.md" not in agent.system_prompt
     # The agent knows which one it is and the job it is learning.
     assert 'You are "Payouts"' in agent.system_prompt and "<job>\nReconcile weekly payouts\n</job>" in agent.system_prompt
-    assert "# Learning the job" in agent.system_prompt
+    assert "# Learning the job" in agent.system_prompt and "---\n   name: <name, the same as the folder>" in agent.system_prompt
 
 
 def test_instructions_without_a_job():

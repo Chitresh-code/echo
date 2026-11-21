@@ -31,7 +31,7 @@ export function Explorer({ tree, letters, active, onOpen, onRefresh, onCreate }:
     })
 
   return (
-    <Box component="aside" aria-label="Files" sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
+    <Box component="aside" aria-label="Files" sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, py: 1.25, pl: 2, pr: 1, borderBottom: 1, borderColor: 'divider' }}>
         <Typography sx={{ flexGrow: 1, fontSize: 12, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'text.secondary' }}>
           Explorer

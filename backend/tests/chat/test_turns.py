@@ -75,6 +75,7 @@ def test_a_turn_marks_the_agent_as_used(monkeypatch, fake_runner):
     from main import create_app
 
     use_model(monkeypatch, ScriptedModel([[("text", "Hi.")]]))
+    fake_runner.lines = [DONE]
     with TestClient(create_app()) as client:
         user = sign_in_as(client)
         own(client, user, WS)
@@ -257,3 +258,61 @@ async def test_failure_becomes_an_error_event_without_its_text(fake_runner):
     events = [e async for e in turn_service.stream_turn("k4", explode, "go", 60)]
     assert len(events) == 1 and "turn_failed" in events[0] and "sk-secret" not in events[0]
     await wait_for(lambda: not turn_service.is_busy("k4"))
+
+
+def hashes_in_turn(monkeypatch, *answers):
+    """skill_hashes answers in order: before the turn, then after it. An exception is raised."""
+    from apps.agents.services import knowledge_service
+
+    queue = list(answers)
+
+    async def fake(settings, agent_id):
+        answer = queue.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(knowledge_service, "skill_hashes", fake)
+    return queue
+
+
+def test_done_lists_the_skills_the_turn_changed(monkeypatch, fake_runner):
+    before = {".agent/skills/report/SKILL.md": "a", ".agent/skills/old/SKILL.md": "b", ".agent/skills/same/SKILL.md": "c"}
+    after = {".agent/skills/report/SKILL.md": "a2", ".agent/skills/same/SKILL.md": "c", ".agent/skills/new/run.py": "d"}
+    left = hashes_in_turn(monkeypatch, before, after)
+    events = run_turn(monkeypatch, fake_runner, shell_then_done())
+    assert events[-1][0] == "done" and events[-1][1]["learned"] == ["new", "old", "report"] and left == []
+
+
+def test_a_turn_that_changes_no_skill_learns_nothing(monkeypatch, fake_runner):
+    hashes_in_turn(monkeypatch, {}, {})
+    assert run_turn(monkeypatch, fake_runner, shell_then_done())[-1][1]["learned"] == []
+
+
+@pytest.mark.parametrize("answers", [(OSError("runner"),), ({}, OSError("runner"))])
+def test_a_failed_skill_check_still_ends_with_done(monkeypatch, fake_runner, answers):
+    hashes_in_turn(monkeypatch, *answers)
+    events = run_turn(monkeypatch, fake_runner, shell_then_done())
+    assert events[-1][0] == "done" and "learned" not in events[-1][1]
+
+
+def test_broken_skills_are_named_in_the_instructions(monkeypatch, fake_runner):
+    from apps.agents.models.knowledge import Skill, Skills
+    from apps.agents.services import knowledge_service
+
+    broken = Skill(name="half-done", description="", path=".agent/skills/half-done/SKILL.md", status="skipped", problem="x")
+    fine = Skill(name="report", description="d", path=".agent/skills/report/SKILL.md", status="ok", problem=None)
+
+    async def listed(settings, agent_id):
+        return Skills(skills=[broken, fine], truncated=False)
+
+    monkeypatch.setattr(knowledge_service, "list_skills", listed)
+    prompts = []
+    real = agent_factory.instructions
+    monkeypatch.setattr(agent_factory, "instructions", lambda *a: prompts.append(real(*a)) or prompts[-1])
+    run_turn(monkeypatch, fake_runner, shell_then_done())
+    assert "# Skills that need fixing" in prompts[0] and "'half-done': not loaded" in prompts[0] and "'report'" not in prompts[0]
+
+
+def test_instructions_without_broken_skills_add_nothing():
+    assert "need fixing" not in agent_factory.instructions("/w", get_settings(), "A", "")

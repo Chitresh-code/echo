@@ -33,8 +33,8 @@ ECHO_SESSION=<cookie> uv run python -m evals.run --credential <key id> --model c
 cp .env.example .env     # then set the account settings
 docker compose build
 docker compose up        # api on 127.0.0.1:${ECHO_PORT:-8000}, user guide at /docs, API reference at /api/docs
-docker compose --profile test run --rm api-test       # backend tests inside the api image, including `stack` tests against the real runner
-docker compose --profile test run --rm sandbox-test   # runner tests, including real jails behind the firewall
+docker compose -f compose.test.yml run --rm api-test       # backend tests inside the api image, including `stack` tests against the real runner
+docker compose -f compose.test.yml run --rm sandbox-test   # runner tests, including real jails behind the firewall
 ```
 
 ### Web (from `web/`)
@@ -70,7 +70,7 @@ uv run pytest            # unit tests with a stand-in nsjail; tests marked `jail
 
 **Agent state**: Strands harness writes conversation sessions and long-term memory from the api process, so they live in the api container's data directory, keyed by agent id (the same id the runner uses for its workspace). Skills are read through the sandbox, so they live in the workspace under `.agent/skills/`, where the agent and the user can both edit them.
 
-**nsjail needs Linux**: namespaces only exist on Linux, so local development and production both run in containers via `compose.yml`, and only the sandbox container is privileged.
+**nsjail needs Linux**: namespaces only exist on Linux, so local development and production both run in containers via `compose.yml` (tests via `compose.test.yml`, which includes it), and only the sandbox container is privileged.
 
 ## Working with this repo
 

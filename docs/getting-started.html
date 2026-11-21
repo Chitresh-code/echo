@@ -66,6 +66,10 @@ ECHO_SECRET_KEY=a key you generate, see below</code></pre>
 ECHO_PUBLIC_URL=http://localhost:8010</code></pre>
     <p class="note">Echo listens only on your own machine for now. Do not expose it to a network: the sandbox does not yet have the limits needed before other people use it.</p>
 
+    <h2>Where your data is kept</h2>
+    <p>Everything Echo keeps lives in two Docker volumes on this machine. <code>echo_sandbox-data</code> holds each agent's workspace: its files, its skills in <code>.agent/skills/</code> and its git history. <code>echo_api-data</code> holds Echo's database (people, agents and their encrypted keys), each chat's conversation and each agent's notes. Volumes do not expire: they survive restarts, rebuilds and <code>docker compose down</code>, and are deleted only by <code>docker compose down -v</code> or <code>docker volume rm</code>.</p>
+    <p>An agent's workspace is a git repository, but it is not pushed anywhere. Nothing is copied off this machine, so back up both volumes if the agents' work matters, for example with <code>docker run --rm -v echo_sandbox-data:/data -v "$PWD":/backup alpine tar czf /backup/sandbox-data.tgz -C /data .</code> and the same for <code>echo_api-data</code>, with Echo stopped.</p>
+
     <h2>If something goes wrong</h2>
     <p>Every error Echo returns includes a <code>request_id</code>. Search the logs for it to see what happened:</p>
     <pre><code>docker compose logs api | grep &lt;request_id&gt;</code></pre>

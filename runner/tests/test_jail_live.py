@@ -1,5 +1,5 @@
 """Real jails behind the real firewall. These run only in the sandbox image, as root, after the
-entrypoint has installed the firewall: `docker compose --profile test run --rm sandbox-test`."""
+entrypoint has installed the firewall: `docker compose -f compose.test.yml run --rm sandbox-test`."""
 
 import asyncio
 import json

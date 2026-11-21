@@ -37,10 +37,22 @@ def run_task(client: httpx.Client, task: Task, credential: str, model: str, effo
     ws = client.post("/api/agents", json={"name": f"eval {task.name}", "job": "Evaluation task"}).raise_for_status().json()["data"]["id"]
     for path, content in task.seed.items():
         client.put(f"/api/agents/{ws}/file", json={"path": path, "content": content}).raise_for_status()
-    chat = client.post(f"/api/agents/{ws}/chats").raise_for_status().json()["data"]["id"]
     out = {"task": task.name, "agent": ws, "tools": 0, "tokens": 0, "error": None}
     started = time.monotonic()
-    for prompt in task.prompts:
+    for prompts in (task.prompts, task.next_chat):
+        if prompts and not out["error"]:
+            _chat(client, ws, prompts, credential, model, effort, out)
+    out["seconds"] = round(time.monotonic() - started)
+    if not out["error"]:
+        skills = [s["name"] for s in client.get(f"/api/agents/{ws}/skills").raise_for_status().json()["data"]["skills"] if s["status"] != "skipped"]
+        out["error"] = task.check(lambda p: read_file(client, ws, p), changed_paths(client, ws), skills)
+    return out
+
+
+def _chat(client: httpx.Client, ws: str, prompts: list[str], credential: str, model: str, effort: str, out: dict) -> None:
+    """Sends prompts in order in one new chat, adding tools and tokens to `out` and stopping at the first error."""
+    chat = client.post(f"/api/agents/{ws}/chats").raise_for_status().json()["data"]["id"]
+    for prompt in prompts:
         body = {"credential_id": credential, "model": model, "effort": effort, "prompt": prompt}
         with client.stream("POST", f"/api/agents/{ws}/chats/{chat}/turns", json=body, timeout=None) as response:
             response.raise_for_status()
@@ -51,10 +63,6 @@ def run_task(client: httpx.Client, task: Task, credential: str, model: str, effo
             out["error"] = f"{last[1].get('code')} (request {last[1].get('request_id')})"
             break
         out["tokens"] += tokens(last[1].get("usage", {}))
-    out["seconds"] = round(time.monotonic() - started)
-    if not out["error"]:
-        out["error"] = task.check(lambda p: read_file(client, ws, p), changed_paths(client, ws))
-    return out
 
 
 def read_file(client: httpx.Client, ws: str, path: str) -> str | None:

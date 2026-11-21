@@ -18,3 +18,6 @@ export const PROVIDERS: Record<Provider, string> = {
   google: 'Google',
   openai_compatible: 'OpenAI-compatible',
 }
+export type Skill = { name: string; description: string; path: string; status: 'ok' | 'warning' | 'skipped'; problem: string | null }
+export type Skills = { skills: Skill[]; truncated: boolean }
+export type Note = { name: string; text: string; updated_at: string }

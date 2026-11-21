@@ -8,6 +8,7 @@ from apps.chat.services import agent_factory, turn_service
 from apps.credentials.services import credential_service, providers
 from apps.agents.repositories import agents
 from apps.agents.routers.agent_router import CurrentUser, Db, OwnedAgent
+from apps.agents.services import knowledge_service
 from apps.agents.services.paths import AGENT_ID
 from core.auth import current_user
 from core.config import get_settings
@@ -47,18 +48,20 @@ async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user:
     # shortcut: the model id goes to the provider unchecked, so a wrong one fails as turn_failed after the stream starts; the UI's picker will offer only listed models.
     model = providers.build_model(credential.provider, key, credential.base_url, body.model, body.effort)
     side_model = providers.build_side_model(credential.provider, key, credential.base_url, model)
-    # Read per turn, so a rename or a new job reaches the very next message.
+    # Read per turn, so a rename, a new job or a broken skill reaches the very next message.
     agent = await agents.get(session, agent_id, user.id)
+    needs_fixing = [s for s in (await knowledge_service.list_skills(settings, agent_id)).skills if s.status != "ok"]
     # Recorded once the turn is accepted, so the agents list shows which agent was used last.
     await agents.touch(session, agent_id)
     await session.commit()
     stream = turn_service.stream_turn(
         chat_key,
         lambda: agent_factory.build_agent(
-            settings, agent_id, chat_id, model, f"{credential.provider}/{body.model}", side_model, agent.name, agent.job
+            settings, agent_id, chat_id, model, f"{credential.provider}/{body.model}", side_model, agent.name, agent.job, needs_fixing
         ),
         body.prompt,
         settings.turn_timeout,
+        lambda: knowledge_service.skill_hashes(settings, agent_id),
     )
     # No buffering by a proxy, so events reach the browser as they happen.
     return StreamingResponse(stream, media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

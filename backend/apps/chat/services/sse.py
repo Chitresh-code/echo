@@ -18,10 +18,16 @@ def to_sse(event: dict, seen_tools: set[str]) -> str | None:
             seen_tools.add(tool_id)
             return message("tool", {"id": tool_id, "name": tool.get("name")})
         return None
-    if "result" in event:
-        result = event["result"]
-        return message("done", {"stopReason": result.stop_reason, "usage": usage_of(result)})
+    if (reply := event.get("message")) and reply.get("role") == "assistant":
+        # The skills tool's input is complete only once the reply is, so the skill it loaded is
+        # named here, after its tool row.
+        used = [message("skill", {"id": use["toolUseId"], "name": _skill_name(use)}) for use in _tool_uses(reply, "skills")]
+        return "".join(used) or None
     return None
+
+
+def done_data(result) -> dict:
+    return {"stopReason": result.stop_reason, "usage": usage_of(result)}
 
 
 USAGE_KEYS = ("inputTokens", "outputTokens", "cacheReadInputTokens", "cacheWriteInputTokens")
@@ -32,3 +38,13 @@ def usage_of(result) -> dict[str, int]:
     memory extraction run on a separate small model and are not counted here."""
     usage = result.metrics.accumulated_usage
     return {key: usage.get(key, 0) for key in USAGE_KEYS}
+
+
+def _tool_uses(reply: dict, name: str) -> list[dict]:
+    return [b["toolUse"] for b in reply.get("content", []) if b.get("toolUse", {}).get("name") == name]
+
+
+def _skill_name(use: dict) -> str:
+    # The model wrote this input, so it may not be the shape the tool asked for.
+    value = use.get("input")
+    return str(value.get("skill_name", ""))[:64] if isinstance(value, dict) else ""

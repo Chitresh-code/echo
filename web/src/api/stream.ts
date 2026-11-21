@@ -4,7 +4,10 @@ import type { Usage } from './types'
 export type TurnEvent =
   | { event: 'text'; data: { text: string } }
   | { event: 'tool'; data: { id: string; name: string } }
-  | { event: 'done'; data: { stopReason: string; usage: Usage } }
+  // The skill a finished skills tool call loaded, sent after that call's tool row.
+  | { event: 'skill'; data: { id: string; name: string } }
+  // learned: skill folders the turn changed; missing when they could not be compared.
+  | { event: 'done'; data: { stopReason: string; usage: Usage; learned?: string[] } }
   | { event: 'error'; data: { code: string; message: string; request_id?: string } }
 
 /** Splits a server-sent event stream into events. Chunks can end anywhere, even mid-line, so the

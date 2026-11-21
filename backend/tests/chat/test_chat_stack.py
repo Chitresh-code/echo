@@ -1,5 +1,5 @@
 """A whole turn against the real runner and real jails, with a scripted model in place of a
-provider: run with `docker compose --profile test run --rm api-test`."""
+provider: run with `docker compose -f compose.test.yml run --rm api-test`."""
 
 import pytest
 

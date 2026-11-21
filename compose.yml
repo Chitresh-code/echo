@@ -36,38 +36,6 @@ services:
       sandbox:
         condition: service_healthy
 
-  api-test:
-    profiles: [test]
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-      target: test
-    # Fake but valid values: stack tests never sign in to Microsoft or decrypt a real key.
-    environment:
-      ECHO_PUBLIC_URL: http://localhost:8000
-      ECHO_MS_TENANT_ID: 11111111-1111-1111-1111-111111111111
-      ECHO_MS_CLIENT_ID: 22222222-2222-2222-2222-222222222222
-      ECHO_MS_CLIENT_SECRET: test-client-secret
-      ECHO_SECRET_KEY: dGVzdC1vbmx5LWtleS1ub3QtYS1zZWNyZXQtMDAwMDA=
-    networks: [api-net]
-    volumes:
-      - runner-socket:/run/echo
-    # Stack tests talk to the real runner, so the sandbox must be up first.
-    depends_on:
-      sandbox:
-        condition: service_healthy
-    command: ["pytest", "-p", "no:cacheprovider", "-m", "stack or not stack"]
-
-  # Jail tests: real jails, behind the same firewall entrypoint as the sandbox.
-  sandbox-test:
-    profiles: [test]
-    build:
-      context: ./runner
-      target: test
-    privileged: true
-    networks: [sandbox-net]
-    command: ["pytest", "-p", "no:cacheprovider", "-m", "jail or not jail"]
-
 volumes:
   sandbox-data:
   api-data:

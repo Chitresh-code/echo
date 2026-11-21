@@ -5,7 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.accounts.models.account import User
 from apps.agents.models.agent import Agent, AgentFile, AgentUpdate, GitFileStatus, GitFileVersions, NewAgent, SaveFile, Tree
+from apps.agents.models.knowledge import Note, Skills
+from apps.credentials.models.credential import Deleted
 from apps.agents.services import agent_service as service
+from apps.agents.services import knowledge_service
 from core.auth import current_user
 from core.config import get_settings
 from core.db import db
@@ -70,3 +73,19 @@ async def git_status(agent_id: OwnedAgent) -> list[GitFileStatus]:
 @router.get("/{agent_id}/git/file", summary="A file's last committed and current versions, for a diff", tags=["git"])
 async def git_file_versions(agent_id: OwnedAgent, path: str = PathQuery) -> GitFileVersions:
     return await service.git_file_versions(get_settings(), agent_id, path)
+
+
+@router.get("/{agent_id}/skills", summary="The agent's skills, and any the harness would skip or warns about", tags=["knowledge"])
+async def list_skills(agent_id: OwnedAgent) -> Skills:
+    return await knowledge_service.list_skills(get_settings(), agent_id)
+
+
+@router.get("/{agent_id}/notes", summary="What the agent remembers across chats, newest first", tags=["knowledge"])
+async def list_notes(agent_id: OwnedAgent) -> list[Note]:
+    return knowledge_service.list_notes(get_settings(), agent_id)
+
+
+@router.delete("/{agent_id}/notes/{name}", summary="Make the agent forget one note", tags=["knowledge"])
+async def delete_note(agent_id: OwnedAgent, name: str) -> Deleted:
+    knowledge_service.delete_note(get_settings(), agent_id, name)
+    return Deleted(deleted=True)

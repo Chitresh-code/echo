@@ -34,8 +34,11 @@
 
     <h2>An agent's page</h2>
     <p>Opening an agent shows three panels: the files on the left, the editor in the middle and the <a href="chat.html">chat</a> on the right. On a narrow window they stack.</p>
+    <p>The left panel has three tabs: Files, Skills and Notes.</p>
     <ul>
-      <li><strong>Explorer</strong>: every file and folder in the workspace. Files changed since the last commit carry git's letter: <code>M</code> modified, <code>U</code> new, <code>D</code> deleted. The count of changed files shows next to the agent's name. The new-file button creates a file; refresh reloads the list, which also happens after every chat turn.</li>
+      <li><strong>Skills</strong>: what the agent has learned to do, one row per skill with its name and when the agent uses it. Click one to open its <code>SKILL.md</code> in the editor, where you can change it like any file. A red mark means the agent cannot load that skill, a yellow one that it loads but breaks the format; hover for the reason. The agent is told about both at the start of its next turn so it can fix them.</li>
+      <li><strong>Notes</strong>: the short notes the agent keeps from each chat, newest first. The bin button, then Forget, deletes a note for good, so the agent no longer remembers it.</li>
+      <li><strong>Explorer</strong> (the Files tab): every file and folder in the workspace. Files changed since the last commit carry git's letter: <code>M</code> modified, <code>U</code> new, <code>D</code> deleted. The count of changed files shows next to the agent's name. The new-file button creates a file; refresh reloads the list, which also happens after every chat turn.</li>
       <li><strong>Editor</strong>: open files in tabs, edit them and save with the Save button or Ctrl+S (Cmd+S on a Mac). A tab with unsaved edits is marked, and the browser warns before you leave with unsaved edits. Files that are not text show as "Binary file, not shown".</li>
       <li><strong>Diff</strong>: for a changed file, Diff shows the last commit next to the file as it is now. A new file is compared with an empty one.</li>
     </ul>
