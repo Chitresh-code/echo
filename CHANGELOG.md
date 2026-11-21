@@ -8,6 +8,11 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
+## 0.7.1 (2026-11-22)
+
+### Fixed
+- Prompt caching now applies to OpenAI keys as well as Anthropic ones: each chat sends its own cache key, so long chats reread less at full price. Google caches on its own and is unchanged.
+
 ## 0.7.0 (2026-11-22)
 
 A redesigned user guide, written for the people who use Echo.

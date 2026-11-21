@@ -21,6 +21,8 @@ def test_each_provider_builds_its_model_with_the_users_key():
 
     model = providers.build_model("openai", KEY, None, "gpt-5")
     assert isinstance(model, OpenAIResponsesModel) and model.client_args == {"api_key": KEY}
+    # Prompt caching for OpenAI too: the SDK keys the cache by the chat's session id.
+    assert model.config["cache_config"].strategy == "auto"
 
     model = providers.build_model("google", KEY, None, "gemini-2.5-flash")
     assert isinstance(model, GeminiModel) and model.client_args == {"api_key": KEY}

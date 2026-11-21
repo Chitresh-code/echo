@@ -45,7 +45,7 @@ def build_model(provider: str, api_key: str, base_url: str | None, model_id: str
     # web search and reasoning. They read keys from the environment, which holds none, so the
     # user's key is set on the model's client before any request.
     try:
-        model = resolve_model(f"{provider}/{model_id}", default="", effort=effort, web_search=web_search, caching=provider == "anthropic")
+        model = resolve_model(f"{provider}/{model_id}", default="", effort=effort, web_search=web_search, caching=True)
     except ValueError as exc:
         # The harness's own check of the level against the model, which names the supported levels.
         raise AppError(400, "effort_not_supported", str(exc)) from None
