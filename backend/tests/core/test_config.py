@@ -8,7 +8,7 @@ BASE = dict(TEST_ENV)
 
 def test_defaults():
     s = load_settings(BASE)
-    assert (s.command_timeout, s.turn_timeout) == (120, 1800)
+    assert (s.command_timeout, s.command_timeout_max, s.turn_timeout) == (120, 1800, 1800)
     assert str(s.runner_socket) == "/run/echo/runner.sock"
 
 
@@ -16,6 +16,11 @@ def test_defaults():
 def test_bad_timeout(value):
     with pytest.raises(ConfigError, match="ECHO_TURN_TIMEOUT"):
         load_settings({**BASE, "ECHO_TURN_TIMEOUT": value})
+
+
+def test_command_timeout_must_fit_the_runner_cap():
+    with pytest.raises(ConfigError, match="ECHO_COMMAND_TIMEOUT_MAX"):
+        load_settings({**BASE, "ECHO_COMMAND_TIMEOUT": "600", "ECHO_COMMAND_TIMEOUT_MAX": "300"})
 
 
 def test_old_models_setting_is_ignored_with_a_warning(monkeypatch, app, fake_runner, caplog):

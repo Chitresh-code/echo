@@ -26,7 +26,7 @@ async def create_chat(workspace_id: OwnedWorkspace) -> Chat:
     "/api/workspaces/{workspace_id}/chats/{chat_id}/turns",
     summary="Send a message and stream the agent's turn as server-sent events",
     description="`credential_id` is one of your keys and `model` a model it can use. "
-    "Streams `text` ({text}), `tool` ({id, name}) and then `done` ({stopReason}) or `error` ({code, message}). "
+    "Streams `text` ({text}), `tool` ({id, name}) and then `done` ({stopReason, usage}) or `error` ({code, message}). "
     "Swagger UI cannot show a stream; use `curl -N`.",
     tags=["chat"],
     response_class=StreamingResponse,
@@ -45,9 +45,10 @@ async def send_turn(workspace_id: OwnedWorkspace, chat_id: str, body: TurnReques
     credential, key = await credential_service.with_key(settings, session, user.id, body.credential_id)
     # shortcut: the model id goes to the provider unchecked, so a wrong one fails as turn_failed after the stream starts; the UI's picker will offer only listed models.
     model = providers.build_model(credential.provider, key, credential.base_url, body.model, body.effort)
+    side_model = providers.build_side_model(credential.provider, key, credential.base_url, model)
     stream = turn_service.stream_turn(
         chat_key,
-        lambda: agent_factory.build_agent(settings, workspace_id, chat_id, model, f"{credential.provider}/{body.model}"),
+        lambda: agent_factory.build_agent(settings, workspace_id, chat_id, model, f"{credential.provider}/{body.model}", side_model),
         body.prompt,
         settings.turn_timeout,
     )

@@ -59,7 +59,7 @@ class RunnerSandbox(PosixShellSandbox):
     ) -> AsyncGenerator[StreamChunk | ExecutionResult, None]:
         if env:
             validate_env_keys(env)
-        # shortcut: the agent's shell tool always sends its own 120 s default, so default_timeout only covers file tools and the Workspaces API; set it from settings once the harness allows it.
+        # The agent's shell sends its own timeout; file tools and the Workspaces API send none.
         seconds = math.ceil(timeout) if timeout else self.default_timeout
         body = {"command": command, "timeout": seconds, "cwd": cwd, "env": env}
         # shortcut: output is kept in full for the tool result, so a command printing gigabytes grows api memory; cap it before multi-user hosting.

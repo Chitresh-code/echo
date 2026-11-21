@@ -32,6 +32,8 @@ def use_model(monkeypatch, model) -> list[tuple]:
         return model
 
     monkeypatch.setattr(providers, "build_model", build)
+    # The scripted model also does the side work, as one model serves every call it is given.
+    monkeypatch.setattr(providers, "build_side_model", lambda provider, key, base_url, main: main)
     return asked
 
 
@@ -63,7 +65,8 @@ def run_turn(monkeypatch, fake_runner, model, prompt="say hi"):
 def test_turn_streams_text_tools_and_done(monkeypatch, fake_runner):
     events = run_turn(monkeypatch, fake_runner, shell_then_done())
     assert [e for e, _ in events] == ["text", "tool", "text", "done"]
-    assert events[1][1]["name"] == "shell" and events[-1][1] == {"stopReason": "end_turn"}
+    assert events[1][1]["name"] == "shell" and events[-1][1]["stopReason"] == "end_turn"
+    assert set(events[-1][1]["usage"]) == {"inputTokens", "outputTokens", "cacheReadInputTokens", "cacheWriteInputTokens"}
     assert any(r["command"] == "echo hi" and r["workspace_id"] == WS for r in fake_runner.requests)
     assert (get_settings().data_dir / "sessions" / WS).is_dir()
 
@@ -191,7 +194,7 @@ def test_busy_chat_is_409(client, user, fake_runner):
 
 
 def agent_maker(model):
-    return lambda: agent_factory.build_agent(get_settings(), WS, CHAT, model, "anthropic/claude-sonnet-5-5")
+    return lambda: agent_factory.build_agent(get_settings(), WS, CHAT, model, "anthropic/claude-sonnet-5-5", model)
 
 
 async def wait_for(condition, seconds=5):

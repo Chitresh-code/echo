@@ -21,6 +21,8 @@ class Settings:
     data_dir: Path
     runner_socket: Path
     command_timeout: int
+    # The runner's own cap on one command (its RUNNER_TIMEOUT_MAX), told to the agent so it asks for no more.
+    command_timeout_max: int
     turn_timeout: int
     # Where users open Echo, without a trailing slash: the sign-in redirect and the only allowed Origin.
     public_url: str
@@ -78,10 +80,15 @@ def _secret_key(env: Mapping[str, str]) -> str:
 
 
 def load_settings(env: Mapping[str, str] = os.environ) -> Settings:
+    command_timeout = _positive_int(env, "ECHO_COMMAND_TIMEOUT", 120)
+    command_timeout_max = _positive_int(env, "ECHO_COMMAND_TIMEOUT_MAX", 1800)
+    if command_timeout > command_timeout_max:
+        raise ConfigError(f"ECHO_COMMAND_TIMEOUT ({command_timeout}) must not be above ECHO_COMMAND_TIMEOUT_MAX ({command_timeout_max})")
     return Settings(
         data_dir=Path(env.get("ECHO_DATA_DIR", "/data")),
         runner_socket=Path(env.get("ECHO_RUNNER_SOCKET", "/run/echo/runner.sock")),
-        command_timeout=_positive_int(env, "ECHO_COMMAND_TIMEOUT", 120),
+        command_timeout=command_timeout,
+        command_timeout_max=command_timeout_max,
         turn_timeout=_positive_int(env, "ECHO_TURN_TIMEOUT", 1800),
         public_url=_public_url(env),
         ms_tenant_id=_guid(env, "ECHO_MS_TENANT_ID"),

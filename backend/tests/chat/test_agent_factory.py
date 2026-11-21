@@ -15,16 +15,29 @@ def test_build_agent(monkeypatch):
     monkeypatch.setattr(agent_factory, "create_harness", lambda **kw: calls.append(kw) or real(**kw))
     settings = get_settings()
 
-    agent = agent_factory.build_agent(settings, WS, CHAT, providers.build_model("anthropic", "test-key", None, "claude-sonnet-5-5"), "anthropic/claude-sonnet-5-5")
+    side = providers.build_side_model("anthropic", "test-key", None, None)
+    agent = agent_factory.build_agent(settings, WS, CHAT, providers.build_model("anthropic", "test-key", None, "claude-sonnet-5-5"), "anthropic/claude-sonnet-5-5", side)
 
     kw = calls[0]
     assert isinstance(agent.sandbox, RunnerSandbox) and agent.sandbox.workspace_id == WS
     assert kw["session"] == {"id": CHAT, "dir": str(settings.data_dir / "sessions" / WS)}
     assert kw["memory"] == {"dir": str(settings.data_dir / "memory" / WS)}
     assert kw["skills"] == [f"/data/workspaces/{WS}/.agent/skills"]
-    assert kw["builtin_tools"]["web_fetch"] == {"transport": "curl"}
-    assert "web_fetch" in agent.tool_names and "programmatic_tool_caller" not in agent.tool_names
+    assert kw["builtin_tools"]["web_fetch"] == {"transport": "curl", "model": side}
+    # No subagent, which would run a hidden agent loop on the user's key, and no
+    # programmatic_tool_caller, which would run model-written Python in the api process.
+    assert sorted(agent.tool_names) == sorted([
+        "shell", "read", "write", "edit", "web_fetch", "skills", "search_memory", "retrieve_context", "strands_manage_background_task",
+    ])
+    shell = agent.tool_registry.registry["shell"].tool_spec
+    assert shell["inputSchema"]["json"]["properties"]["timeout"]["default"] == settings.command_timeout
+    assert f"at most {settings.command_timeout_max}" in shell["description"]
     assert f"/data/workspaces/{WS}" in agent.system_prompt
+    # The limits the agent is told are the configured ones.
+    assert f"{settings.command_timeout} seconds" in agent.system_prompt and f"up to {settings.command_timeout_max}" in agent.system_prompt
+    assert "Untrusted content" in agent.system_prompt
+    # The harness injects AGENTS.md every turn, so the prompt does not ask for it to be read.
+    assert "Read AGENTS.md" not in agent.system_prompt
 
 
 def test_agent_never_touches_the_workspace_on_the_api_side(monkeypatch, fake_runner):

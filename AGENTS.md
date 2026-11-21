@@ -11,7 +11,7 @@ Services, each its own container:
 - `runner/` is the sandbox service. It owns the workspaces and starts an nsjail jail per command, on demand. Runs privileged and holds no secrets.
 - `web/` (not created yet) will be the React + Vite + Monaco frontend.
 
-So far the backend has its core plumbing and a health check, and the runner creates workspaces and runs jailed commands. Users sign in with Microsoft Entra (`backend/apps/accounts/`), and the api keeps its records in SQLite through SQLAlchemy, migrated with Alembic at startup (`core/db.py`, `migrations/`). Users store their own provider keys encrypted (`backend/apps/credentials/`). The backend has the Workspaces API (`backend/apps/workspaces/`), each workspace owned by one user, which reaches the runner through `RunnerSandbox`. Chat lives in `backend/apps/chat/`: `agent_factory.py` builds the Strands harness agent for one turn with the workspace's `RunnerSandbox`, and `turn_service.py` runs it as a task that streams server-sent events. Tests drive turns with `tests/helpers/scripted_model.py`, a model that plays back fixed replies, so no test calls a provider, and sign a test client in with `tests/helpers/accounts.py` instead of going through Microsoft. The agent's model choice, tools and instructions are a basic first version, to be refined one piece at a time. Known shortcuts carry a `shortcut:` comment saying the limit and when to lift it; list them with `grep -rn "shortcut:" backend runner`.
+So far the backend has its core plumbing and a health check, and the runner creates workspaces and runs jailed commands. Users sign in with Microsoft Entra (`backend/apps/accounts/`), and the api keeps its records in SQLite through SQLAlchemy, migrated with Alembic at startup (`core/db.py`, `migrations/`). Users store their own provider keys encrypted (`backend/apps/credentials/`). The backend has the Workspaces API (`backend/apps/workspaces/`), each workspace owned by one user, which reaches the runner through `RunnerSandbox`. Chat lives in `backend/apps/chat/`: `agent_factory.py` builds the Strands harness agent for one turn with the workspace's `RunnerSandbox`, and `turn_service.py` runs it as a task that streams server-sent events. Tests drive turns with `tests/helpers/scripted_model.py`, a model that plays back fixed replies, so no test calls a provider, and sign a test client in with `tests/helpers/accounts.py` instead of going through Microsoft. `agent_factory.py` also holds the agent's instructions and its tool set; after changing either, run the evals in `backend/evals/`. Known shortcuts carry a `shortcut:` comment saying the limit and when to lift it; list them with `grep -rn "shortcut:" backend runner`.
 
 ## Commands
 
@@ -21,6 +21,11 @@ uv sync                  # install dependencies
 uv run pytest            # unit tests against a fake runner on a temporary socket; tests marked `stack` are skipped
 uv run uvicorn main:app --reload   # needs the account settings in .env.example and ECHO_RUNNER_SOCKET pointing at a running runner, or startup fails
 ECHO_DATA_DIR=/tmp/echo-dev uv run alembic revision -m "what it changes"   # new migration in migrations/versions/; the api applies migrations at startup
+```
+
+Evals (`backend/evals/`, see its README) run real tasks against a running Echo on your own key and cost money; run them by hand after changing the agent's tools or instructions, never in CI:
+```bash
+ECHO_SESSION=<cookie> uv run python -m evals.run --credential <key id> --model claude-haiku-5-5 --effort low --max-tokens 400000
 ```
 
 ### Stack (from the repo root)

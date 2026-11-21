@@ -15,8 +15,12 @@ def test_tool_is_sent_once_per_id():
     assert to_sse({"current_tool_use": {"toolUseId": "t2", "name": "read"}}, seen).startswith("event: tool")
 
 
-def test_done():
-    assert to_sse({"result": SimpleNamespace(stop_reason="end_turn")}, set()) == 'event: done\ndata: {"stopReason": "end_turn"}\n\n'
+def test_done_carries_the_turns_token_usage():
+    result = SimpleNamespace(stop_reason="end_turn", metrics=SimpleNamespace(accumulated_usage={"inputTokens": 900, "outputTokens": 40, "totalTokens": 940, "cacheReadInputTokens": 600}))
+    assert to_sse({"result": result}, set()) == (
+        'event: done\ndata: {"stopReason": "end_turn", "usage": '
+        '{"inputTokens": 900, "outputTokens": 40, "cacheReadInputTokens": 600, "cacheWriteInputTokens": 0}}\n\n'
+    )
 
 
 def test_everything_else_is_dropped():

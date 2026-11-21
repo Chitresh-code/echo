@@ -26,8 +26,19 @@ Every change adds a line under the current version heading (the newest one, mark
 - A turn names the key and model it runs on: `credential_id` and `model` in the turn's body. A missing or someone else's key answers 404 `credential_not_found` before the turn starts. There is no server-wide model list or provider key any more: `ECHO_MODELS`, `ANTHROPIC_API_KEY` and the like are not read, and startup logs a warning when `ECHO_MODELS` is still set.
 - api and sandbox images and `compose.yml`. The api runs unprivileged as a non-root user on 127.0.0.1; the sandbox image carries nsjail 3.4 and the toolchains jails use (Python 3.12, Node 22, uv, git, ripgrep, build tools).
 - A turn can choose how hard the model reasons: `effort` in the turn's body (`auto`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`, default `auto`, the level recommended for the model). A level the model does not take answers 400 `effort_not_supported` before the turn starts, naming the levels it does take. OpenAI-compatible keys take only `auto`.
+- The `done` event carries the turn's token use on the chosen model (`usage`: input, output, cache read and cache write tokens).
+- Evals in `backend/evals/`: five real tasks run by hand through the API on your own key, with a token cap, for tuning the agent's tools and instructions. They are never run by the test suite.
+- `ECHO_COMMAND_TIMEOUT_MAX` (default 1800), the longest a single command may run; keep it equal to the sandbox's `RUNNER_TIMEOUT_MAX`. Startup fails when `ECHO_COMMAND_TIMEOUT` is above it.
+
+### Changed
+- The agent's instructions are rewritten: who Echo is, the sandbox's real limits, treating web pages, files and command output as data rather than instructions, git habits, and ending each turn with what changed, how it was checked and what was not done.
+- Page summaries from web fetches and memory extraction after each turn run on the provider's small model (Claude Haiku 5.5, gpt-6-luna or Gemini 3.5 Flash Lite) with reasoning off, on the same key, instead of on the turn's model and effort. OpenAI-compatible keys still use the turn's model.
+
+### Removed
+- The agent's `subagent` tool, which ran a whole child agent on your key with nothing of it shown in the chat stream.
 
 ### Fixed
+- The agent's commands now use `ECHO_COMMAND_TIMEOUT` as their default time limit. Before, the shell tool always sent its own 2 minute default, and the agent was not told it could ask for longer.
 - Moving a chat to another provider or model could fail the next turn, because the chat kept the earlier model's signed reasoning and citation blocks that the new provider rejects. Echo now records each chat's model and, when it changes, keeps the conversation but drops the earlier hidden reasoning.
 - Tools that use WebAssembly on Node 22, such as a Vite build, failed in jails with a WebAssembly memory error. Jails no longer cap address space; `RUNNER_JAIL_MEMORY_MB` (default 4096) now limits the memory a jail actually uses.
 

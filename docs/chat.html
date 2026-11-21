@@ -39,11 +39,15 @@
     <ul>
       <li><code>text</code>: a piece of the agent's reply.</li>
       <li><code>tool</code>: the agent started using a tool, such as <code>shell</code>, <code>read</code>, <code>write</code> or <code>edit</code>.</li>
-      <li><code>done</code>: the turn is over.</li>
+      <li><code>done</code>: the turn is over. Its <code>usage</code> holds the tokens the turn used on your model: <code>inputTokens</code>, <code>outputTokens</code>, <code>cacheReadInputTokens</code> and <code>cacheWriteInputTokens</code>. Summaries of web pages and the agent's notes are made by the provider's small model on the same key and are not included.</li>
       <li><code>error</code>: the turn stopped early. It has a <code>code</code> and, when the server failed, a <code>request_id</code> to quote when you report it.</li>
     </ul>
     <p>A model id the key cannot use, or a key the provider has since revoked, makes the turn fail with <code>turn_failed</code> once it starts; check the list of models for the key.</p>
     <p>Afterwards, look at what changed with the file and git endpoints on the <a href="workspaces.html">Workspaces</a> page.</p>
+
+    <h2>What the agent can do</h2>
+    <p>The agent runs shell commands, reads, writes and edits files, fetches web pages, uses the provider's own web search where the provider has one, loads its skills and searches its notes. Everything except web search runs in the workspace's jail. Web pages, files and command output are treated as information, not as instructions: if a file or page tells the agent to do something you did not ask for, it does not do it and tells you. When a task changes files, it commits them, and it ends each turn with what it changed, how it checked it and what it could not do.</p>
+    <p>To keep cost down, summaries of fetched pages and the agent's notes are made by the provider's small model (Claude Haiku 5.5, gpt-6-luna or Gemini 3.5 Flash Lite) on the same key. Keys for an OpenAI-compatible service use the chosen model for this too.</p>
 
     <h2>What the agent knows about your project</h2>
     <p>Put an <code>AGENTS.md</code> file at the root of the workspace with your conventions, such as how to run the tests or which style to follow. The agent reads it at the start of every turn and keeps it up to date. Workflows it learns and scripts it writes for itself go in <code>.agent/skills/</code> in the workspace, so it can use them again in later chats. It also keeps short notes about the workspace across chats.</p>
@@ -51,7 +55,7 @@
     <h2>Limits</h2>
     <ul>
       <li>One message at a time per chat. Sending another while the agent is still working gets the <code>chat_busy</code> error. Wait for <code>done</code>, or start a second chat.</li>
-      <li>A turn stops after 30 minutes (<code>ECHO_TURN_TIMEOUT</code>). Each command the agent runs stops after 2 minutes unless the agent asks for longer, up to 30 minutes.</li>
+      <li>A turn stops after 30 minutes (<code>ECHO_TURN_TIMEOUT</code>). Each command the agent runs stops after 2 minutes (<code>ECHO_COMMAND_TIMEOUT</code>) unless the agent asks for longer, up to 30 minutes (<code>ECHO_COMMAND_TIMEOUT_MAX</code>). The agent is told both limits.</li>
       <li>Stopping <code>curl</code> stops the turn and the command that was running.</li>
       <li>The agent cannot open a server it starts, such as a dev server, because the jail cannot reach localhost. It can build and test, and anything that runs to completion works.</li>
     </ul>

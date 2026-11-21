@@ -34,7 +34,7 @@ class _GuardedOpenAIModel(OpenAIModel):
             yield client
 
 
-def build_model(provider: str, api_key: str, base_url: str | None, model_id: str, effort: str = "auto") -> Model:
+def build_model(provider: str, api_key: str, base_url: str | None, model_id: str, effort: str = "auto", web_search: bool = True) -> Model:
     if provider == "openai_compatible":
         # Echo cannot know which reasoning parameter, if any, an arbitrary endpoint accepts, and an
         # unknown one can fail the whole request.
@@ -45,7 +45,7 @@ def build_model(provider: str, api_key: str, base_url: str | None, model_id: str
     # web search and reasoning. They read keys from the environment, which holds none, so the
     # user's key is set on the model's client before any request.
     try:
-        model = resolve_model(f"{provider}/{model_id}", default="", effort=effort, web_search=True, caching=provider == "anthropic")
+        model = resolve_model(f"{provider}/{model_id}", default="", effort=effort, web_search=web_search, caching=provider == "anthropic")
     except ValueError as exc:
         # The harness's own check of the level against the model, which names the supported levels.
         raise AppError(400, "effort_not_supported", str(exc)) from None
@@ -54,6 +54,20 @@ def build_model(provider: str, api_key: str, base_url: str | None, model_id: str
     else:
         model.client_args = {"api_key": api_key}
     return model
+
+
+# Small models for page summaries and memory extraction, which otherwise run on the turn's own
+# model and effort. Each must be in the provider's model list for an ordinary key.
+# shortcut: one fixed id per provider, so a key without access to it loses page summaries and memory extraction (logged); make it a per-user setting if that is reported.
+SIDE_MODELS = {"anthropic": "claude-haiku-5-5", "openai": "gpt-6-luna", "google": "gemini-3.5-flash-lite"}
+
+
+def build_side_model(provider: str, api_key: str, base_url: str | None, main: Model) -> Model:
+    """The model for the agent's side work: small, no reasoning, on the same key. An
+    openai_compatible endpoint serves its own models, so it keeps the turn's model."""
+    if provider not in SIDE_MODELS:
+        return main
+    return build_model(provider, api_key, base_url, SIDE_MODELS[provider], effort="off", web_search=False)
 
 
 async def list_models(provider: str, api_key: str, base_url: str | None) -> list[ProviderModel]:

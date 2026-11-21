@@ -29,6 +29,20 @@ def test_each_provider_builds_its_model_with_the_users_key():
     assert model.client_args == {"api_key": KEY, "base_url": "https://api.example.com/v1"}
 
 
+@pytest.mark.parametrize("provider", ["anthropic", "openai", "google"])
+def test_side_model_is_small_without_reasoning_or_search_on_the_same_key(provider):
+    side = providers.build_side_model(provider, KEY, None, main=None)
+    assert side.config["model_id"] == providers.SIDE_MODELS[provider]
+    config = str(side.config)
+    assert "web_search" not in config and "google_search" not in config and "thinking" not in config
+    assert getattr(side, "client_args", None) == {"api_key": KEY} or side.client.api_key == KEY
+
+
+def test_side_model_of_a_compatible_endpoint_is_the_turns_model():
+    main = providers.build_model("openai_compatible", KEY, "https://api.example.com/v1", "m")
+    assert providers.build_side_model("openai_compatible", KEY, "https://api.example.com/v1", main) is main
+
+
 @pytest.mark.parametrize("provider, model_id, effort, params", [
     ("anthropic", "claude-sonnet-5-5", "high", {"thinking": {"type": "adaptive", "display": "summarized"}, "output_config": {"effort": "high"}}),
     ("openai", "gpt-6-luna", "off", {"reasoning": {"effort": "none"}}),

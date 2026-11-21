@@ -19,5 +19,16 @@ def to_sse(event: dict, seen_tools: set[str]) -> str | None:
             return message("tool", {"id": tool_id, "name": tool.get("name")})
         return None
     if "result" in event:
-        return message("done", {"stopReason": event["result"].stop_reason})
+        result = event["result"]
+        return message("done", {"stopReason": result.stop_reason, "usage": usage_of(result)})
     return None
+
+
+USAGE_KEYS = ("inputTokens", "outputTokens", "cacheReadInputTokens", "cacheWriteInputTokens")
+
+
+def usage_of(result) -> dict[str, int]:
+    """The turn's tokens on the chosen model, so users see what it cost them. Page summaries and
+    memory extraction run on a separate small model and are not counted here."""
+    usage = result.metrics.accumulated_usage
+    return {key: usage.get(key, 0) for key in USAGE_KEYS}
