@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # Signing in lands on the browser app, which opens on the agents list.
 AFTER_SIGN_IN = "/"
-SIGN_IN_FAILED = "/docs/signing-in.html"
+SIGN_IN_FAILED = "/docs/first-agent.html"
 
 
 @router.get("/login", summary="Sign in with Microsoft", response_class=RedirectResponse, status_code=302)

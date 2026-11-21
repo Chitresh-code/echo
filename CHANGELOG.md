@@ -8,6 +8,20 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
+## 0.7.0 (2026-11-22)
+
+A redesigned user guide, written for the people who use Echo.
+
+### Changed
+- The user guide at `/docs` is reorganized by reader: Using Echo (Welcome, Your first agent, Teaching your agent, Chatting, Files and changes, Model keys), Running Echo (Install and set up, Data and backups) and Developers (Using the API, with every `curl` example). Pages that used to mix setup and API detail into everyday use no longer do.
+- The guide now looks like the app: its colors, fonts and logo, dark and light themes that follow the app's theme choice, diagrams of how an agent learns and how its workspace is shut off, and pictures of the chat, Skills and Notes tabs. Code blocks have a copy button, and long pages list their sections.
+- A failed sign-in now lands on `/docs/first-agent.html`, which explains the error, instead of `/docs/signing-in.html`.
+- Guide files are sent with `Cache-Control: no-cache`, so a browser never shows a new page with an old stylesheet after an upgrade.
+- Data and backups adds how to restore the two volumes, and that the secret key must be kept with a backup.
+
+### Removed
+- The guide pages `getting-started.html`, `signing-in.html`, `agents.html` and `chat.html`. Their content moved to the new pages; the old addresses show the guide's not-found page, which links home.
+
 ## 0.6.1 (2026-11-22)
 
 ### Fixed

@@ -45,6 +45,10 @@ class WebHeadersMiddleware:
                 # Built asset names carry a content hash, so a cached copy is never stale.
                 if scope["path"].startswith("/assets/") and message["status"] == 200:
                     headers["Cache-Control"] = "public, max-age=31536000, immutable"
+                # Guide files keep their names across releases, so the browser must check each time
+                # (a cheap ETag round trip) or it shows a new page with an old stylesheet.
+                elif scope["path"].startswith("/docs/"):
+                    headers["Cache-Control"] = "no-cache"
             await send(message)
 
         await self.app(scope, receive, send_with_headers)

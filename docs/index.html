@@ -3,39 +3,124 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Echo docs</title>
+  <title>Echo Guide</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
+  <script src="guide.js"></script>
 </head>
-<body>
-  <header>
-    <nav>
-      <a class="brand" href="./">Echo</a>
-      <a href="./">Overview</a>
-      <a href="getting-started.html">Getting started</a>
-      <a href="signing-in.html">Signing in</a>
-      <a href="keys.html">Keys</a>
-      <a href="agents.html">Agents</a>
-      <a href="chat.html">Chat</a>
-      <a href="/api/docs">API reference</a>
+<body class="home">
+  <header class="top">
+    <button class="icon-btn menu-btn" type="button" aria-label="Menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="./"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="12" r="2" fill="currentColor"/><path d="M11 7a7 7 0 0 1 0 10"/><path d="M15 4a11 11 0 0 1 0 16"/></svg>Echo <span>Guide</span></a>
+    <nav class="sections" aria-label="Sections">
+      <a href="./" aria-current="true">Using Echo</a>
+      <a href="install.html">Running Echo</a>
+      <a href="api.html">Developers</a>
     </nav>
+    <span class="spacer"></span>
+    <button class="icon-btn theme-btn" type="button" aria-label="Switch between light and dark"><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/></svg></button>
+    <a class="btn primary" href="/">Open Echo</a>
   </header>
   <main>
-    <h1>Echo</h1>
-    <p>Echo gives you agents that each learn one job from you and keep what they learn. You create an agent, show it the job in a chat and correct it; it writes down the workflows it learns and uses them again next time. Underneath, every agent has a workspace of its own where it runs commands, installs packages, edits files and commits to git, inside an isolated jail, so an agent can only touch its own workspace.</p>
-    <p>You sign in with your Microsoft work account and bring your own model provider key: Anthropic, OpenAI, Google, or any service with an OpenAI-compatible API. Your agents and keys are yours alone; nobody else signed in to Echo can see them.</p>
+    <section class="hero">
+      <div class="hero-inner">
+        <div>
+          <span class="pill">User guide</span>
+          <h1>Teach it once.<br><em>It remembers.</em></h1>
+          <p class="lede">Echo gives you agents that each learn one job from you. Show an agent the job in a chat, correct it, and it saves what it learned so the next time is done your way.</p>
+          <div class="actions">
+            <a class="btn primary big" href="first-agent.html">Make your first agent <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+            <a class="btn big" href="#how-it-learns">See how it learns</a>
+          </div>
+        </div>
+        <figure class="hero-mock" aria-labelledby="hero-cap">
+          <div class="mock" aria-hidden="true">
+            <div class="mock-bar"><span class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9 17h6"/></svg></span><b>Release notes</b><span class="muted">Keep CHANGELOG.md current</span></div>
+            <div class="mock-body">
+              <div class="bubble you">Group the entries under Added, Changed and Fixed, and leave out internal refactors.</div>
+              <div class="tool">read</div>
+              <div class="tool">edit</div>
+              <div class="tool">write</div>
+              <div class="bubble">Done. CHANGELOG.md now groups entries by type and skips refactors. I saved this as the <code>release-notes</code> skill, so I will do it this way next time.</div>
+              <div class="learned"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg> Learned: <code>release-notes</code></div>
+            </div>
+          </div>
+          <figcaption id="hero-cap" class="mock-caption">A correction in a chat, and the skill it became.</figcaption>
+        </figure>
+      </div>
+    </section>
 
-    <h2>What you can do today</h2>
-    <p>Echo is in early development. Open it in your browser to sign in, add your provider keys, create agents, read and edit their files, see what changed since the last commit, and chat with them. Everything is also available through the API.</p>
+    <section class="band" id="how-it-learns">
+      <div class="wrap">
+        <p class="eyebrow">How it learns</p>
+        <h2>Every correction makes the next time better</h2>
+        <p class="lede">You do not write instructions up front. You work with the agent the way you would with a new colleague, and it writes down what you taught it.</p>
+        <figure class="diagram">
+          <ol class="loop">
+            <li><b>You show it the job</b><small>Ask for the work in a chat, as you would brief a colleague.</small></li>
+            <li><b>You correct it</b><small>Say what to change, and why if it helps.</small></li>
+            <li class="hot"><b>It saves a skill</b><small>The steps go into its workspace, and a Learned line under the reply shows it.</small></li>
+            <li><b>It uses the skill next time</b><small>In every later chat it follows its skills first.</small></li>
+          </ol>
+          <div class="loop-back"><span>next time, done your way</span></div>
+          <figcaption>The loop runs every time you correct the agent. <a href="teaching.html">Teaching your agent</a> shows what a skill looks like and how to check it.</figcaption>
+        </figure>
+      </div>
+    </section>
 
-    <h2>Where to go next</h2>
-    <ul>
-      <li><a href="getting-started.html">Getting started</a>: register Echo with Microsoft and install it.</li>
-      <li><a href="signing-in.html">Signing in</a>: sign in, and use your session from <code>curl</code>.</li>
-      <li><a href="keys.html">Keys</a>: add your model provider key and see its models.</li>
-      <li><a href="agents.html">Agents</a>: create an agent, and work with its files and changes.</li>
-      <li><a href="chat.html">Chat</a>: give the agent a task and watch it work.</li>
-      <li><a href="/api/docs">API reference</a>: every endpoint, with a form to try each one.</li>
-    </ul>
+    <section class="band">
+      <div class="wrap">
+        <p class="eyebrow">Safe by design</p>
+        <h2>Each agent works in its own locked room</h2>
+        <p class="lede">An agent can run commands, install packages and use the internet, but only inside a workspace of its own. It cannot reach your computer, your network or your other agents.</p>
+        <figure class="diagram">
+          <div class="room">
+            <div class="node"><span class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><b>You</b><small>in your browser</small></div>
+            <div class="link"><span>chats, edits</span></div>
+            <div class="node"><span class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="12" r="2" fill="currentColor"/><path d="M11 7a7 7 0 0 1 0 10"/><path d="M15 4a11 11 0 0 1 0 16"/></svg></span><b>Echo</b><small>signs you in and runs the agent</small><span class="tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 8.8-8.8M16 7l3 3M14 9l2 2"/></svg> Your model key stays here</span></div>
+            <div class="link"><span>every command</span></div>
+            <div class="node box"><span class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg></span><b>The agent's workspace</b><small>its files, skills and history, in a jail of its own</small><span class="tag no">No way into your computer or network</span></div>
+          </div>
+          <figcaption>Your model key is used by Echo to talk to the model and never enters the workspace, so nothing the agent runs can read it.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap">
+        <p class="eyebrow">Get going</p>
+        <h2>Your first agent in three steps</h2>
+        <ol class="steps">
+          <li><h3>Sign in and add a key</h3><p>Sign in with your Microsoft work account, then add a key from Anthropic, OpenAI, Google or a compatible service.</p></li>
+          <li><h3>Create an agent</h3><p>Give it a name and describe the one job it does for you.</p></li>
+          <li><h3>Show it the job</h3><p>Ask for the work in the chat and correct it until it is right. It keeps what it learns.</p></li>
+        </ol>
+        <p><a class="btn primary" href="first-agent.html">Start with your first agent <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></p>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap">
+        <p class="eyebrow">Guides</p>
+        <h2>Using Echo</h2>
+        <div class="cards">
+          <a class="card" href="teaching.html"><span class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg></span><h3>Teaching your agent</h3><p>How corrections become skills, and how to see and change what it knows.</p></a>
+          <a class="card" href="chatting.html"><span class="tile blue"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span><h3>Chatting</h3><p>Pick a model, give it work and follow along as it runs.</p></a>
+          <a class="card" href="files.html"><span class="tile violet"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15l2 2 4-4"/></svg></span><h3>Files and changes</h3><p>Read and edit the agent's files and see what it changed.</p></a>
+          <a class="card" href="keys.html"><span class="tile warm"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 8.8-8.8M16 7l3 3M14 9l2 2"/></svg></span><h3>Model keys</h3><p>Add your provider key and see which models it can use.</p></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="band">
+      <div class="wrap">
+        <h2>Not here to use it?</h2>
+        <div class="cards">
+          <a class="card wide" href="install.html"><span class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/></svg></span><div><h3>Running Echo</h3><p>Install it, connect Microsoft sign-in, and keep its data backed up.</p></div></a>
+          <a class="card wide" href="api.html"><span class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg></span><div><h3>Developers</h3><p>Everything in the app is in the API too, with <code>curl</code> examples.</p></div></a>
+        </div>
+      </div>
+    </section>
   </main>
 </body>
 </html>

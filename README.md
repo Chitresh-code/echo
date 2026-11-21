@@ -24,7 +24,7 @@ The two containers share only the runner's socket and sit on separate networks, 
 
 ## Run it
 
-You need Docker with Compose, permission to run a privileged container, and a Microsoft Entra app registration. The [getting started guide](docs/getting-started.html) walks through the Entra setup.
+You need Docker with Compose, permission to run a privileged container, and a Microsoft Entra app registration. The [install guide](docs/install.html) walks through the Entra setup, and [Data and backups](docs/data.html) covers backing up.
 
 ```bash
 cp .env.example .env      # fill in the Entra ids, client secret and ECHO_SECRET_KEY

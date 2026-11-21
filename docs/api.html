@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Using the API - Echo Guide</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="guide.js"></script>
+</head>
+<body class="">
+  <header class="top">
+    <button class="icon-btn menu-btn" type="button" aria-label="Menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+    <a class="brand" href="./"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="12" r="2" fill="currentColor"/><path d="M11 7a7 7 0 0 1 0 10"/><path d="M15 4a11 11 0 0 1 0 16"/></svg>Echo <span>Guide</span></a>
+    <nav class="sections" aria-label="Sections">
+      <a href="./">Using Echo</a>
+      <a href="install.html">Running Echo</a>
+      <a href="api.html" aria-current="true">Developers</a>
+    </nav>
+    <span class="spacer"></span>
+    <button class="icon-btn theme-btn" type="button" aria-label="Switch between light and dark"><svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg><svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/></svg></button>
+    <a class="btn primary" href="/">Open Echo</a>
+  </header>
+  <div class="doc">
+    <nav class="side" aria-label="Guide">
+      <p>Using Echo</p>
+      <a href="./">Welcome</a>
+      <a href="first-agent.html">Your first agent</a>
+      <a href="teaching.html">Teaching your agent</a>
+      <a href="chatting.html">Chatting</a>
+      <a href="files.html">Files and changes</a>
+      <a href="keys.html">Model keys</a>
+      <p>Running Echo</p>
+      <a href="install.html">Install and set up</a>
+      <a href="data.html">Data and backups</a>
+      <p>Developers</p>
+      <a href="api.html" aria-current="page">Using the API</a>
+      <a href="/api/docs">API reference</a>
+    </nav>
+    <article>
+      <p class="crumb">Developers</p>
+      <h1>Using the API</h1>
+      <p class="lede">Everything in the app is also in the API. This page shows the common calls with <code>curl</code>. The <a href="/api/docs">API reference</a> lists every endpoint, with a form to try each one as you.</p>
+
+      <h2 id="session">Your session</h2>
+      <p>The API uses the same sign-in as the app. Your session is a cookie named <code>echo_session</code>. Copy its value from your browser's developer tools (Application or Storage, then Cookies, then the Echo address) and set it once in your shell:</p>
+      <pre><code>export ECHO='echo_session=the value'
+curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
+      <p><code>GET /api/auth/me</code> shows who you are signed in as and <code>POST /api/auth/logout</code> signs you out everywhere. A session lasts 7 days. Without one, every call answers 401 with the code <code>not_signed_in</code>.</p>
+      <div class="tip warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg><p>Anyone with this value can act as you until the session ends, so do not paste it anywhere shared. Signing out ends it.</p></div>
+      <p>Every answer is JSON. Every error has a <code>code</code> you can act on and a <code>request_id</code> to quote when you report a problem.</p>
+
+      <h2 id="keys">Model keys</h2>
+      <pre><code>curl -b "$ECHO" -X POST http://localhost:8000/api/credentials \
+  -H 'content-type: application/json' \
+  -d '{"provider": "anthropic", "label": "Work", "api_key": "your key"}'</code></pre>
+      <p><code>provider</code> is <code>anthropic</code>, <code>openai</code>, <code>google</code> or <code>openai_compatible</code>. For a compatible service, add its address, the part before <code>/chat/completions</code>:</p>
+      <pre><code>  -d '{"provider": "openai_compatible", "label": "OpenRouter", "api_key": "your key", "base_url": "https://openrouter.ai/api/v1"}'</code></pre>
+      <p>For a service that cannot list its models, also give <code>models</code>, up to 50, with a chat model first:</p>
+      <pre><code>  -d '{"provider": "openai_compatible", "label": "Gateway", "api_key": "your key",
+       "base_url": "https://gateway.example.com/v1", "models": ["gpt-5.4-mini"]}'</code></pre>
+      <p>The answer holds the key's <code>id</code>, which you use when you chat. The key itself is never shown again; answers show only its last four characters as <code>key_hint</code>, or nothing for a short key.</p>
+      <ul>
+        <li><code>GET /api/credentials</code> lists your keys, newest first.</li>
+        <li><code>GET /api/credentials/{id}/models</code> lists the models the key can use, asked live from the provider, or the list you gave. Use one of these <code>id</code> values as the <code>model</code> when you chat.</li>
+        <li><code>DELETE /api/credentials/{id}</code> removes a key.</li>
+      </ul>
+      <dl class="codes">
+        <dt><code>invalid_key</code></dt><dd>The provider refused the key.</dd>
+        <dt><code>endpoint_not_allowed</code></dt><dd>The service's address is on a private network or your own machine.</dd>
+        <dt><code>invalid_base_url</code></dt><dd>The address is not <code>https</code>, has a user name, password, <code>?</code> or <code>#</code>, or was given for a provider other than <code>openai_compatible</code>.</dd>
+        <dt><code>provider_error</code></dt><dd>The provider did not answer as expected, or a compatible service cannot list its models (give <code>models</code>).</dd>
+        <dt><code>model_not_available</code></dt><dd>The service does not serve the first model in <code>models</code>.</dd>
+        <dt><code>models_not_supported</code></dt><dd>Only <code>openai_compatible</code> keys take <code>models</code>.</dd>
+        <dt><code>credential_not_found</code></dt><dd>There is no key of yours with that id.</dd>
+        <dt><code>credential_unreadable</code></dt><dd>The server's secret was changed, so the key cannot be decrypted. Add it again.</dd>
+      </dl>
+
+      <h2 id="agents">Agents</h2>
+      <pre><code>curl -b "$ECHO" -X POST http://localhost:8000/api/agents \
+  -H 'content-type: application/json' \
+  -d '{"name": "Release notes", "job": "Keep CHANGELOG.md current from merged work"}'</code></pre>
+      <p><code>name</code> is 1 to 80 characters and <code>job</code> up to 500.</p>
+      <ul>
+        <li><code>GET /api/agents</code> lists your agents, most recently used first.</li>
+        <li><code>GET /api/agents/{id}</code> returns one, and <code>PATCH /api/agents/{id}</code> with <code>name</code> or <code>job</code> changes it.</li>
+        <li><code>GET /api/agents/{id}/skills</code> lists its skills with their description and <code>status</code>: <code>ok</code>, <code>warning</code> or <code>skipped</code>, with the <code>problem</code>.</li>
+        <li><code>GET /api/agents/{id}/notes</code> lists its notes, newest first, and <code>DELETE /api/agents/{id}/notes/{name}</code> forgets one. A missing note answers <code>note_not_found</code>.</li>
+      </ul>
+      <p>Someone else's agent answers <code>agent_not_found</code>, the same as one that does not exist.</p>
+
+      <h2 id="files">Files and changes</h2>
+      <ul>
+        <li><code>GET /api/agents/{id}/tree</code> lists every file and folder except <code>.git</code>, at most 5000 entries.</li>
+        <li><code>GET /api/agents/{id}/file?path=src/app.py</code> reads a file. Text comes back as is; a file that is not UTF-8 text comes back base64 encoded, and the answer says which.</li>
+        <li><code>PUT /api/agents/{id}/file</code> with <code>{"path": "src/app.py", "content": "..."}</code> saves a text file and creates any folders it needs.</li>
+        <li><code>GET /api/agents/{id}/git/status</code> lists the files changed since the last commit, and <code>GET /api/agents/{id}/git/file?path=...</code> returns a file as it was in the last commit and as it is now.</li>
+      </ul>
+      <p>Paths are relative to the workspace. A path that starts with <code>/</code> or uses <code>..</code> answers <code>invalid_path</code>. Files over 5 MB answer <code>file_too_large</code>, and a missing one <code>file_not_found</code>.</p>
+
+      <h2 id="chat">Chats</h2>
+      <p>Start a chat, then send messages to it. Each chat keeps its own conversation, and an agent can have many.</p>
+      <pre><code>curl -b "$ECHO" -X POST http://localhost:8000/api/agents/{id}/chats</code></pre>
+      <pre><code>curl -b "$ECHO" -N -X POST http://localhost:8000/api/agents/{id}/chats/{chat}/turns \
+  -H 'content-type: application/json' \
+  -d '{"prompt": "Create a small Vite site that says hello, build it and commit it",
+       "credential_id": "your key id", "model": "claude-sonnet-5-5"}'</code></pre>
+      <p><code>credential_id</code> is one of your keys and <code>model</code> one of its model ids. Each message names them again, so you can move a chat to another model or provider at any message. The new model sees the whole conversation, but not the earlier model's hidden reasoning.</p>
+      <p>Add <code>"effort"</code> to choose how hard the model thinks: <code>auto</code> (the default, the level recommended for the model), <code>off</code>, <code>minimal</code>, <code>low</code>, <code>medium</code>, <code>high</code>, <code>xhigh</code> or <code>max</code>. A level the model does not take answers <code>effort_not_supported</code> with the levels it does take. Keys for an OpenAI-compatible service take only <code>auto</code>.</p>
+
+      <h3 id="events">The reply stream</h3>
+      <p>The reply streams back as server-sent events:</p>
+      <dl class="codes">
+        <dt><code>text</code></dt><dd>A piece of the agent's reply.</dd>
+        <dt><code>tool</code></dt><dd>The agent started using a tool, such as <code>shell</code>, <code>read</code>, <code>write</code> or <code>edit</code>.</dd>
+        <dt><code>skill</code></dt><dd><code>{id, name}</code>: the skill a <code>skills</code> tool call loaded. It follows that tool's event.</dd>
+        <dt><code>done</code></dt><dd>The turn is over. <code>usage</code> holds the tokens it used on your model (<code>inputTokens</code>, <code>outputTokens</code>, <code>cacheReadInputTokens</code>, <code>cacheWriteInputTokens</code>), not counting summaries made by the provider's small model. <code>learned</code> lists the skills the turn added, changed or removed.</dd>
+        <dt><code>error</code></dt><dd>The turn stopped early. It has a <code>code</code> and, when the server failed, a <code>request_id</code>.</dd>
+      </dl>
+      <ul>
+        <li>One message at a time per chat: another one while the agent works answers <code>chat_busy</code>.</li>
+        <li>A key id that is not yours answers <code>credential_not_found</code>. A model the key cannot use, or a key the provider has revoked, fails with <code>turn_failed</code> once the turn starts.</li>
+        <li>A turn stops after 30 minutes (<code>ECHO_TURN_TIMEOUT</code>). Each command stops after 2 minutes (<code>ECHO_COMMAND_TIMEOUT</code>) unless the agent asks for longer, up to 30 (<code>ECHO_COMMAND_TIMEOUT_MAX</code>).</li>
+        <li>Stopping <code>curl</code> stops the turn and the command that was running. The app's stop button does not: there the turn finishes on the server.</li>
+      </ul>
+      <nav class="pager" aria-label="Previous and next">
+        <a class="prev" href="data.html"><small>Previous</small>Data and backups</a>
+      </nav>
+    </article>
+    <nav class="toc" aria-label="On this page"></nav>
+  </div>
+</body>
+</html>
