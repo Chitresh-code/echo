@@ -9,6 +9,7 @@ from strands.models.gemini import GeminiModel
 from strands.models.openai_responses import OpenAIResponsesModel
 
 from apps.credentials.services import providers
+from core.errors import AppError
 
 KEY = "sk-user-key-0123456789"
 
@@ -26,6 +27,30 @@ def test_each_provider_builds_its_model_with_the_users_key():
 
     model = providers.build_model("openai_compatible", KEY, "https://api.example.com/v1", "m")
     assert model.client_args == {"api_key": KEY, "base_url": "https://api.example.com/v1"}
+
+
+@pytest.mark.parametrize("provider, model_id, effort, params", [
+    ("anthropic", "claude-sonnet-5-5", "high", {"thinking": {"type": "adaptive", "display": "summarized"}, "output_config": {"effort": "high"}}),
+    ("openai", "gpt-6-luna", "off", {"reasoning": {"effort": "none"}}),
+    ("openai", "gpt-6-luna", "auto", {"reasoning": {"effort": "high"}}),
+    ("google", "gemini-2.5-flash", "low", {"thinking_config": {"thinking_level": "low"}}),
+])
+def test_effort_reaches_the_providers_setting(provider, model_id, effort, params):
+    config = providers.build_model(provider, KEY, None, model_id, effort).config["params"]
+    assert params.items() <= config.items()
+
+
+def test_unsupported_effort_is_refused_with_the_supported_levels():
+    with pytest.raises(AppError) as e:
+        providers.build_model("google", KEY, None, "gemini-2.5-flash", "max")
+    assert e.value.status_code == 400 and e.value.code == "effort_not_supported" and "low, medium, high" in e.value.message
+
+
+def test_openai_compatible_takes_only_auto():
+    assert providers.build_model("openai_compatible", KEY, "https://api.example.com/v1", "m", "auto")
+    with pytest.raises(AppError) as e:
+        providers.build_model("openai_compatible", KEY, "https://api.example.com/v1", "m", "high")
+    assert e.value.code == "effort_not_supported"
 
 
 def status_error(module, http, cls, status):

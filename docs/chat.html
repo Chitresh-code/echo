@@ -34,6 +34,7 @@
   -d '{"prompt": "Create a small Vite site that says hello, build it and commit it",
        "credential_id": "your key id", "model": "claude-sonnet-5-5"}'</code></pre>
     <p><code>credential_id</code> is the <code>id</code> of one of your keys, and <code>model</code> one of the model ids from <code>GET /api/credentials/{id}/models</code>. Each message names its key and model again. Switching to another provider in the middle of a chat has not been tested and may fail; start a new chat for that. A key id that is not one of yours answers <code>credential_not_found</code>.</p>
+    <p>To choose how hard the model thinks, add <code>"effort"</code>: one of <code>auto</code>, <code>off</code>, <code>minimal</code>, <code>low</code>, <code>medium</code>, <code>high</code>, <code>xhigh</code> or <code>max</code>. Higher levels help with hard tasks but are slower and cost more; <code>off</code> turns reasoning off where the model allows it. Without it the message uses <code>auto</code>, the level recommended for the model. Models take different levels, and one a model does not take answers <code>effort_not_supported</code> with the levels it does take. Keys for an OpenAI-compatible service take only <code>auto</code>.</p>
     <p>The agent's reply streams back as it works, as server-sent events:</p>
     <ul>
       <li><code>text</code>: a piece of the agent's reply.</li>

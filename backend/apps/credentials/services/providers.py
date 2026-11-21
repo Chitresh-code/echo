@@ -34,13 +34,21 @@ class _GuardedOpenAIModel(OpenAIModel):
             yield client
 
 
-def build_model(provider: str, api_key: str, base_url: str | None, model_id: str) -> Model:
+def build_model(provider: str, api_key: str, base_url: str | None, model_id: str, effort: str = "auto") -> Model:
     if provider == "openai_compatible":
+        # Echo cannot know which reasoning parameter, if any, an arbitrary endpoint accepts, and an
+        # unknown one can fail the whole request.
+        if effort != "auto":
+            raise AppError(400, "effort_not_supported", "OpenAI-compatible endpoints take only effort 'auto'.")
         return _GuardedOpenAIModel(client_args={"api_key": api_key, "base_url": base_url}, model_id=model_id)
     # The harness's own builders, so turns keep its per-model output limits, prompt caching, native
-    # web search and default reasoning. They read keys from the environment, which holds none, so
-    # the user's key is set on the model's client before any request.
-    model = resolve_model(f"{provider}/{model_id}", default="", web_search=True, caching=provider == "anthropic")
+    # web search and reasoning. They read keys from the environment, which holds none, so the
+    # user's key is set on the model's client before any request.
+    try:
+        model = resolve_model(f"{provider}/{model_id}", default="", effort=effort, web_search=True, caching=provider == "anthropic")
+    except ValueError as exc:
+        # The harness's own check of the level against the model, which names the supported levels.
+        raise AppError(400, "effort_not_supported", str(exc)) from None
     if provider == "anthropic":
         model.client = anthropic.AsyncAnthropic(api_key=api_key)
     else:

@@ -21,9 +21,17 @@ def shell_then_done(command="echo hi"):
 
 def use_model(monkeypatch, model) -> list[tuple]:
     """Build agents the real way, with the scripted model in place of the provider's. Returns the
-    (provider, key, base_url, model) each turn asked for."""
+    (provider, key, base_url, model, effort) each turn asked for."""
     asked = []
-    monkeypatch.setattr(providers, "build_model", lambda *args: asked.append(args) or model)
+    real = providers.build_model
+
+    def build(*args):
+        # The real builder still runs, so its effort check applies.
+        real(*args)
+        asked.append(args)
+        return model
+
+    monkeypatch.setattr(providers, "build_model", build)
     return asked
 
 
@@ -35,8 +43,8 @@ def parse(body: str) -> list[tuple[str, dict]]:
     return events
 
 
-def turn(prompt, credential_id, model="claude-sonnet-5-5"):
-    return {"prompt": prompt, "credential_id": credential_id, "model": model}
+def turn(prompt, credential_id, model="claude-sonnet-5-5", **extra):
+    return {"prompt": prompt, "credential_id": credential_id, "model": model, **extra}
 
 
 def run_turn(monkeypatch, fake_runner, model, prompt="say hi"):
@@ -86,9 +94,26 @@ def test_turn_runs_on_the_users_stored_key(monkeypatch, client, user, fake_runne
     key_id = add_key(client, user, key="sk-ant-ada-own-key-1234567890")
     events = parse(client.post(TURNS, json=turn("hi", key_id, "claude-opus-5-5")).text)
     assert events[-1][0] == "done"
-    assert asked == [("anthropic", "sk-ant-ada-own-key-1234567890", None, "claude-opus-5-5")]
+    assert asked == [("anthropic", "sk-ant-ada-own-key-1234567890", None, "claude-opus-5-5", "auto")]
     # The key goes to the model client only, never into a command.
     assert all("sk-ant" not in r["command"] for r in fake_runner.requests)
+
+
+def test_turn_runs_at_the_chosen_effort(monkeypatch, client, user, fake_runner):
+    asked = use_model(monkeypatch, shell_then_done())
+    fake_runner.lines = [DONE]
+    own(client, user, WS)
+    events = parse(client.post(TURNS, json=turn("hi", add_key(client, user), effort="max")).text)
+    assert events[-1][0] == "done" and asked[0][-1] == "max"
+
+
+def test_unsupported_effort_is_400_before_the_stream(monkeypatch, client, user, fake_runner):
+    use_model(monkeypatch, shell_then_done())
+    own(client, user, WS)
+    key_id = add_key(client, user, provider="google")
+    response = client.post(TURNS, json=turn("hi", key_id, "gemini-2.5-flash", effort="max"))
+    assert response.status_code == 400 and response.json()["error"]["code"] == "effort_not_supported"
+    assert "low, medium, high" in response.json()["error"]["message"] and fake_runner.requests == []
 
 
 def test_unknown_or_someone_elses_key_is_404_before_the_stream(monkeypatch, client, fake_runner):
@@ -113,6 +138,7 @@ ANY_KEY = "c" * 32
     (TURNS, turn("", ANY_KEY), 422, "validation_error"),
     (TURNS, {"prompt": "hi", "model": "claude-sonnet-5-5"}, 422, "validation_error"),
     (TURNS, turn("hi", ANY_KEY, model="has space"), 422, "validation_error"),
+    (TURNS, turn("hi", ANY_KEY, effort="extreme"), 422, "validation_error"),
 ])
 def test_bad_requests_are_refused_before_any_command(client, user, fake_runner, url, body, status, code):
     own(client, user, WS)
