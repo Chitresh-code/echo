@@ -1,5 +1,5 @@
 """A Strands model that plays back fixed replies, so agent turns run in tests without a provider.
-Each reply is a list of ("text", str) or ("tool", name, input) parts; one reply is used per model
+Each reply is a list of ("text", str), ("reasoning", text, signature) or ("tool", name, input) parts; one reply is used per model
 call, and the last one repeats once the list runs out."""
 
 import json
@@ -15,6 +15,7 @@ class ScriptedModel(Model):
         # How many messages the model was given on each call, to check a session resumed.
         self.message_counts: list[int] = []
         self.first_messages: list | None = None
+        self.all_messages: list = []
         self.config: dict[str, Any] = {"model_id": "scripted"}
 
     def update_config(self, **model_config: Any) -> None:
@@ -33,12 +34,17 @@ class ScriptedModel(Model):
         self.message_counts.append(len(messages))
         if self.first_messages is None:
             self.first_messages = messages
+        self.all_messages.append(messages)
         yield {"messageStart": {"role": "assistant"}}
         uses_tool = False
         for i, part in enumerate(reply):
             if part[0] == "text":
                 yield {"contentBlockStart": {"start": {}}}
                 yield {"contentBlockDelta": {"delta": {"text": part[1]}}}
+            elif part[0] == "reasoning":
+                yield {"contentBlockStart": {"start": {}}}
+                yield {"contentBlockDelta": {"delta": {"reasoningContent": {"text": part[1]}}}}
+                yield {"contentBlockDelta": {"delta": {"reasoningContent": {"signature": part[2]}}}}
             else:
                 uses_tool = True
                 yield {"contentBlockStart": {"start": {"toolUse": {"toolUseId": f"t{self.calls}-{i}", "name": part[1]}}}}

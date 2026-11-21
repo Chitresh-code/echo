@@ -44,11 +44,10 @@ async def send_turn(workspace_id: OwnedWorkspace, chat_id: str, body: TurnReques
     # plain key lives only on this model's client, in this process; it never reaches the sandbox.
     credential, key = await credential_service.with_key(settings, session, user.id, body.credential_id)
     # shortcut: the model id goes to the provider unchecked, so a wrong one fails as turn_failed after the stream starts; the UI's picker will offer only listed models.
-    # shortcut: a chat may switch provider between turns, which is untested with provider-specific history such as reasoning blocks; check it with the Agent model work.
     model = providers.build_model(credential.provider, key, credential.base_url, body.model, body.effort)
     stream = turn_service.stream_turn(
         chat_key,
-        lambda: agent_factory.build_agent(settings, workspace_id, chat_id, model),
+        lambda: agent_factory.build_agent(settings, workspace_id, chat_id, model, f"{credential.provider}/{body.model}"),
         body.prompt,
         settings.turn_timeout,
     )

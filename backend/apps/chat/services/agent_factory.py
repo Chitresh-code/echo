@@ -6,6 +6,7 @@ from strands import Agent
 from strands.models import Model
 from strands_harness import create_harness
 
+from apps.chat.services import history
 from core.config import Settings
 from sandbox.runner_sandbox import WORKSPACES_ROOT, RunnerSandbox
 
@@ -20,9 +21,10 @@ def instructions(root: str) -> str:
 - Commit your work with git when a task is done, unless the user asks you not to."""
 
 
-def build_agent(settings: Settings, workspace_id: str, chat_id: str, model: Model) -> Agent:
+def build_agent(settings: Settings, workspace_id: str, chat_id: str, model: Model, model_key: str) -> Agent:
+    """`model_key` is `provider/model`, recorded so a later turn on another model can tell."""
     root = f"{WORKSPACES_ROOT}/{workspace_id}"
-    return create_harness(
+    agent = create_harness(
         model=model,
         sandbox=RunnerSandbox(workspace_id, settings.runner_socket, settings.command_timeout),
         session={"id": chat_id, "dir": str(settings.data_dir / "sessions" / workspace_id)},
@@ -39,3 +41,6 @@ def build_agent(settings: Settings, workspace_id: str, chat_id: str, model: Mode
         instructions=instructions(root),
         callback_handler=None,
     )
+    # After create_harness, which restores the chat's saved history.
+    history.switch_model(agent, model_key)
+    return agent

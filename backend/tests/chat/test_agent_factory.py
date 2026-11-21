@@ -15,7 +15,7 @@ def test_build_agent(monkeypatch):
     monkeypatch.setattr(agent_factory, "create_harness", lambda **kw: calls.append(kw) or real(**kw))
     settings = get_settings()
 
-    agent = agent_factory.build_agent(settings, WS, CHAT, providers.build_model("anthropic", "test-key", None, "claude-sonnet-5-5"))
+    agent = agent_factory.build_agent(settings, WS, CHAT, providers.build_model("anthropic", "test-key", None, "claude-sonnet-5-5"), "anthropic/claude-sonnet-5-5")
 
     kw = calls[0]
     assert isinstance(agent.sandbox, RunnerSandbox) and agent.sandbox.workspace_id == WS

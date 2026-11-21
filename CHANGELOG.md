@@ -28,6 +28,7 @@ Every change adds a line under the current version heading (the newest one, mark
 - A turn can choose how hard the model reasons: `effort` in the turn's body (`auto`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max`, default `auto`, the level recommended for the model). A level the model does not take answers 400 `effort_not_supported` before the turn starts, naming the levels it does take. OpenAI-compatible keys take only `auto`.
 
 ### Fixed
+- Moving a chat to another provider or model could fail the next turn, because the chat kept the earlier model's signed reasoning and citation blocks that the new provider rejects. Echo now records each chat's model and, when it changes, keeps the conversation but drops the earlier hidden reasoning.
 - Tools that use WebAssembly on Node 22, such as a Vite build, failed in jails with a WebAssembly memory error. Jails no longer cap address space; `RUNNER_JAIL_MEMORY_MB` (default 4096) now limits the memory a jail actually uses.
 
 ### Security

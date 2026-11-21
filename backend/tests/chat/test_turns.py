@@ -77,6 +77,32 @@ def test_second_turn_resumes_the_session(monkeypatch, fake_runner):
     assert model.message_counts[calls] >= first + 4
 
 
+def reasoning_reply():
+    return ScriptedModel([[("reasoning", "hidden-reasoning", "sig-from-the-first-model"), ("text", "Hi.")]])
+
+
+def two_turns(monkeypatch, client, user, fake_runner, second_model):
+    model = reasoning_reply()
+    use_model(monkeypatch, model)
+    fake_runner.lines = [DONE]
+    own(client, user, WS)
+    key_id = add_key(client, user)
+    for model_id in ("claude-sonnet-5-5", second_model):
+        assert parse(client.post(TURNS, json=turn("hi", key_id, model_id)).text)[-1][0] == "done"
+    # The second turn's conversation call, not the memory extraction the harness runs after a turn.
+    conversation = [m for m in model.all_messages if m[0]["content"] == [{"text": "hi"}] and len(m) > 1]
+    return str(conversation[-1])
+
+
+def test_switching_model_drops_the_earlier_reasoning(monkeypatch, client, user, fake_runner):
+    sent = two_turns(monkeypatch, client, user, fake_runner, "claude-opus-5-5")
+    assert "Hi." in sent and "sig-from-the-first-model" not in sent and "hidden-reasoning" not in sent
+
+
+def test_staying_on_the_model_keeps_the_reasoning(monkeypatch, client, user, fake_runner):
+    assert "sig-from-the-first-model" in two_turns(monkeypatch, client, user, fake_runner, "claude-sonnet-5-5")
+
+
 def test_create_chat(client, user, fake_runner):
     own(client, user, WS)
     chat = client.post(f"/api/workspaces/{WS}/chats").json()["data"]
@@ -165,7 +191,7 @@ def test_busy_chat_is_409(client, user, fake_runner):
 
 
 def agent_maker(model):
-    return lambda: agent_factory.build_agent(get_settings(), WS, CHAT, model)
+    return lambda: agent_factory.build_agent(get_settings(), WS, CHAT, model, "anthropic/claude-sonnet-5-5")
 
 
 async def wait_for(condition, seconds=5):
