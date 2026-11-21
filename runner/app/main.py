@@ -2,6 +2,7 @@
 container's user can open, and no network port, so neither a jail nor anything on the network
 can ask it to run a command."""
 
+import asyncio
 import json
 import logging
 import os
@@ -16,7 +17,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app import jail
+from app import jail, usage
 
 logger = logging.getLogger("runner")
 
@@ -54,10 +55,10 @@ def create_app(settings: jail.Settings) -> FastAPI:
         logger.error("Unhandled exception", exc_info=exc)
         return _error(500, "runner_error", "The runner failed.")
 
-    def prepare(workspace_id: str, command: str, timeout: int, cwd=None, env=None) -> tuple[list[str], Path]:
+    def prepare(workspace_id: str, command: str, timeout: int, cwd=None, env=None, fsize_mb: int = 1024) -> tuple[list[str], Path]:
         script = jail.write_script(settings, command)
         try:
-            return jail.build_argv(settings, workspace_id, script, timeout, cwd, env), script
+            return jail.build_argv(settings, workspace_id, script, timeout, cwd, env, fsize_mb=fsize_mb), script
         except BaseException:
             script.unlink()
             raise
@@ -74,6 +75,9 @@ def create_app(settings: jail.Settings) -> FastAPI:
         finally:
             script.unlink()
         return result
+
+    # Background measurements, held so they are not garbage collected mid-walk.
+    tasks: set[asyncio.Task] = set()
 
     @app.get("/health")
     def health():
@@ -103,18 +107,44 @@ def create_app(settings: jail.Settings) -> FastAPI:
         entries.sort(key=lambda p: p.stat().st_mtime, reverse=True)
         return {"success": True, "data": [p.name for p in entries]}
 
+    @app.get("/workspaces/{workspace_id}/usage")
+    async def workspace_usage(workspace_id: str):
+        if not jail.workspace_dir(settings, workspace_id).is_dir():
+            return _error(404, "workspace_not_found", "There is no workspace with this id.")
+        return {"success": True, "data": {"used_bytes": await usage.used(settings, workspace_id), "limit_bytes": usage.limit(settings)}}
+
+    @app.delete("/workspaces/{workspace_id}")
+    async def delete_workspace(workspace_id: str):
+        folders = [jail.workspace_dir(settings, workspace_id), jail.home_dir(settings, workspace_id)]
+        if not any(f.exists() for f in folders):
+            return _error(404, "workspace_not_found", "There is no workspace with this id.")
+        for folder in folders:
+            # rmtree removes a link the agent made instead of following it. Off the event loop,
+            # since a large workspace takes a while.
+            await asyncio.to_thread(shutil.rmtree, folder, ignore_errors=True)
+        usage.forget(workspace_id)
+        if any(f.exists() for f in folders):
+            logger.error("Workspace %s was not fully removed", workspace_id)
+            return _error(500, "workspace_delete_failed", "The workspace could not be fully removed.")
+        return {"success": True, "data": {"deleted": True}}
+
     @app.post("/workspaces/{workspace_id}/exec")
     async def exec_command(workspace_id: str, body: ExecRequest):
         if not jail.workspace_dir(settings, workspace_id).is_dir():
             return _error(404, "workspace_not_found", "There is no workspace with this id.")
         timeout = jail.effective_timeout(settings, body.timeout)
+        used, limit = await usage.used(settings, workspace_id), usage.limit(settings)
+        # Over the limit the jail can still read and delete, so the agent can clean up, but not write.
+        full = used > limit
         # Built before the response starts, so a bad request is a 400, not a broken stream.
-        argv, script = prepare(workspace_id, body.command, timeout, body.cwd, body.env)
+        argv, script = prepare(workspace_id, body.command, timeout, body.cwd, body.env, fsize_mb=0 if full else 1024)
 
         async def lines() -> AsyncIterator[bytes]:
             # When the client disconnects, Starlette cancels this generator, and closing jail.run
             # kills the jail.
             try:
+                if full:
+                    yield (json.dumps({"stream": "stderr", "data": usage.over_limit_message(used, limit)}) + "\n").encode()
                 async for item in jail.run(argv, timeout):
                     if isinstance(item, jail.Exit):
                         line = {"exit_code": item.exit_code, "timed_out": item.timed_out}
@@ -123,6 +153,10 @@ def create_app(settings: jail.Settings) -> FastAPI:
                     yield (json.dumps(line) + "\n").encode()
             finally:
                 script.unlink(missing_ok=True)
+                # In the background, so the response is not held while a large workspace is walked.
+                # shortcut: one command can overshoot the limit before this catches it; a filesystem quota per workspace would stop it at the limit.
+                tasks.add(task := asyncio.create_task(usage.measure(settings, workspace_id)))
+                task.add_done_callback(tasks.discard)
 
         return StreamingResponse(lines(), media_type="application/x-ndjson")
 

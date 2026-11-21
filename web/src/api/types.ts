@@ -20,4 +20,5 @@ export const PROVIDERS: Record<Provider, string> = {
 }
 export type Skill = { name: string; description: string; path: string; status: 'ok' | 'warning' | 'skipped'; problem: string | null }
 export type Skills = { skills: Skill[]; truncated: boolean }
+export type Storage = { used_bytes: number; limit_bytes: number }
 export type Note = { name: string; text: string; updated_at: string }

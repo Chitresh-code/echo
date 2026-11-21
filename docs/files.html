@@ -70,11 +70,15 @@
       <p>For a changed file, <b>Diff</b> shows the last saved version next to the file as it is now. A new file is compared with an empty one. This is the quickest way to check the agent's work before you rely on it.</p>
       <div class="tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg><p>The agent saves a version of the workspace whenever it finishes a task that changed files, so the letters clear after each finished task. The letters you see are work in progress, including your own edits.</p></div>
 
+      <h2 id="storage">Storage limit</h2>
+      <p>Each agent has room for 2 GB, unless whoever runs Echo set another limit. That covers its files and the tools it installs for itself. The bottom of the Files tab shows how much it uses, in yellow once it passes 90%.</p>
+      <p>When an agent goes over its limit, it can still read and delete files but cannot write any, and neither can you from the editor. The agent is told this on its next command, so you can ask it to clean up: build output, <code>node_modules</code> and downloaded packages are usually the biggest. A single command can take an agent past the limit before it is stopped.</p>
+      <p>To free all of an agent's space at once, delete the agent with the bin next to it on the Agents page. That removes its files, skills, notes and chats for good.</p>
+
       <h2 id="limits">Good to know</h2>
       <ul>
         <li>Files larger than 5 MB cannot be opened or saved in the editor.</li>
         <li>The list shows up to 5000 files and folders.</li>
-        <li>Agents cannot be deleted yet.</li>
       </ul>
       <nav class="pager" aria-label="Previous and next">
         <a class="prev" href="chatting.html"><small>Previous</small>Chatting</a>

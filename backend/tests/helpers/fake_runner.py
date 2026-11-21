@@ -35,6 +35,9 @@ class FakeRunner:
         self.requests: list[dict] = []
         self.closed = threading.Event()
         self.workspaces: list[str] = []
+        self.deleted: list[str] = []
+        # What GET /workspaces/{id}/usage answers.
+        self.usage = {"used_bytes": 1024, "limit_bytes": 2048 * 1024 * 1024}
 
     def _app(self) -> FastAPI:
         app = FastAPI()
@@ -47,6 +50,15 @@ class FakeRunner:
         def create_workspace(workspace_id: str):
             self.workspaces.insert(0, workspace_id)
             return {"success": True, "data": {"id": workspace_id}}
+
+        @app.delete("/workspaces/{workspace_id}")
+        def delete_workspace(workspace_id: str):
+            self.deleted.append(workspace_id)
+            return {"success": True, "data": {"deleted": True}}
+
+        @app.get("/workspaces/{workspace_id}/usage")
+        def workspace_usage(workspace_id: str):
+            return {"success": True, "data": self.usage}
 
         @app.get("/workspaces")
         def list_workspaces():

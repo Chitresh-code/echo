@@ -18,12 +18,34 @@ logger = logging.getLogger(__name__)
 # turns never write the same session at once.
 # shortcut: in memory and per process, so it only holds with one api worker; move to a shared lock when the api runs more than one.
 _busy: set[str] = set()
+# Turns running per user id, bounded by the max_running_turns setting.
+_running: dict[str, int] = {}
 # Path to checksum of every file under the workspace's skills folder.
 Snapshot = Callable[[], Awaitable[dict[str, str]]]
 
 
 def is_busy(chat_key: str) -> bool:
     return chat_key in _busy
+
+
+def agent_busy(agent_id: str) -> bool:
+    """Whether any chat of the agent has a turn in progress. Chat keys are `agent_id/chat_id`."""
+    return any(key.startswith(f"{agent_id}/") for key in _busy)
+
+
+def can_start(user_id: str, limit: int) -> bool:
+    return _running.get(user_id, 0) < limit
+
+
+def _release(chat_key: str, user_id: str) -> None:
+    _busy.discard(chat_key)
+    _running[user_id] -= 1
+    if not _running[user_id]:
+        del _running[user_id]
+
+
+def too_many_turns_message(limit: int) -> str:
+    return f"You already have {limit} turns running, the most at once. Wait for one to finish."
 
 
 async def _hashes(snapshot: Snapshot | None) -> dict[str, str] | None:
@@ -71,17 +93,28 @@ async def _run(
 
 
 async def stream_turn(
-    chat_key: str, make_agent: Callable[[], Agent], prompt: str, timeout: int, snapshot: Snapshot | None = None
+    chat_key: str,
+    make_agent: Callable[[], Agent],
+    prompt: str,
+    timeout: int,
+    snapshot: Snapshot | None = None,
+    user_id: str = "",
+    max_running: int | None = None,
 ) -> AsyncIterator[str]:
-    # The router already refused a busy chat; this check covers two requests racing past it.
+    # The router already refused these; the checks here cover requests racing past it.
     if chat_key in _busy:
         yield message("error", {"code": "chat_busy", "message": "This chat already has a turn in progress."})
         return
+    if max_running is not None and not can_start(user_id, max_running):
+        yield message("error", {"code": "too_many_turns", "message": too_many_turns_message(max_running)})
+        return
     _busy.add(chat_key)
+    _running[user_id] = _running.get(user_id, 0) + 1
     cancel = threading.Event()
     queue: asyncio.Queue = asyncio.Queue()
     task = asyncio.create_task(_run(make_agent, prompt, timeout, cancel, queue, snapshot))
-    task.add_done_callback(lambda _: _busy.discard(chat_key))
+    # Released only once the agent task has fully ended, however the turn ended.
+    task.add_done_callback(lambda _: _release(chat_key, user_id))
     try:
         while (item := await queue.get()) is not None:
             yield item

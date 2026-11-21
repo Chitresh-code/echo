@@ -1,7 +1,8 @@
 import Add from '@mui/icons-material/Add'
+import DeleteOutlined from '@mui/icons-material/DeleteOutlined'
 import EditOutlined from '@mui/icons-material/EditOutlined'
 import Search from '@mui/icons-material/Search'
-import { Alert, Box, Button, IconButton, InputBase, Link, Tooltip, Typography } from '@mui/material'
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, InputBase, Link, Tooltip, Typography } from '@mui/material'
 import { useEffect, useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { api, errorText } from '../api/client'
@@ -17,6 +18,23 @@ export function Agents() {
   const [query, setQuery] = useState('')
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Agent | null>(null)
+  const [deleting, setDeleting] = useState<Agent | null>(null)
+  const [deleteError, setDeleteError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  async function remove(agent: Agent) {
+    setBusy(true)
+    setDeleteError('')
+    try {
+      await api(`/api/agents/${agent.id}`, { method: 'DELETE' })
+      setAgents((all) => all?.filter((a) => a.id !== agent.id) ?? null)
+      setDeleting(null)
+    } catch (e) {
+      setDeleteError(errorText(e))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   useEffect(() => {
     api<Agent[]>('/api/agents').then(setAgents, (e) => setError(errorText(e)))
@@ -76,8 +94,13 @@ export function Agents() {
                   </Typography>
                 </Link>
                 <Tooltip title="Rename or change job">
-                  <IconButton aria-label={`Edit ${agent.name}`} onClick={() => setEditing(agent)} sx={{ mx: 1.5 }} size="small">
+                  <IconButton aria-label={`Edit ${agent.name}`} onClick={() => setEditing(agent)} sx={{ ml: 1.5 }} size="small">
                     <EditOutlined fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Delete">
+                  <IconButton aria-label={`Delete ${agent.name}`} onClick={() => setDeleting(agent)} sx={{ mx: 1 }} size="small">
+                    <DeleteOutlined fontSize="small" />
                   </IconButton>
                 </Tooltip>
               </Box>
@@ -97,6 +120,19 @@ export function Agents() {
             navigate(`/agents/${agent.id}`)
           }}
         />
+      )}
+      {deleting && (
+        <Dialog open onClose={() => setDeleting(null)}>
+          <DialogTitle>Delete {deleting.name}?</DialogTitle>
+          <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {deleteError && <Alert severity="error">{deleteError}</Alert>}
+            <Typography color="text.secondary">Its files, skills, notes and chats are removed for good. This cannot be undone.</Typography>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => { setDeleting(null); setDeleteError('') }}>Cancel</Button>
+            <Button variant="contained" color="error" disabled={busy} onClick={() => remove(deleting)}>Delete</Button>
+          </DialogActions>
+        </Dialog>
       )}
       {editing && (
         <AgentDialog

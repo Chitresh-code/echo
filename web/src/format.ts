@@ -16,3 +16,19 @@ export function ago(iso: string, now = new Date()): string {
 export function compact(n: number): string {
   return n < 1000 ? String(n) : `${(n / 1000).toFixed(n < 10000 ? 1 : 0).replace(/\.0$/, '')}k`
 }
+
+/** 1288490188 -> "1.2 GB": disk sizes as the Files tab shows them. */
+export function bytes(n: number): string {
+  const units = ['bytes', 'KB', 'MB', 'GB']
+  let i = 0
+  while (n >= 1024 && i < units.length - 1) {
+    n /= 1024
+    i++
+  }
+  return i === 0 ? `${n} bytes` : `${n.toFixed(n < 10 ? 1 : 0).replace(/\.0$/, '')} ${units[i]}`
+}
+
+/** How full an agent's storage is: over the limit nothing can be written, near it a warning. */
+export function storageLevel(used: number, limit: number): 'ok' | 'warning' | 'error' {
+  return used > limit ? 'error' : used >= limit * 0.9 ? 'warning' : 'ok'
+}

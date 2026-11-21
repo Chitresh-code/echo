@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.accounts.models.account import User
-from apps.agents.models.agent import Agent, AgentFile, AgentUpdate, GitFileStatus, GitFileVersions, NewAgent, SaveFile, Tree
+from apps.agents.models.agent import Agent, AgentFile, AgentUpdate, GitFileStatus, GitFileVersions, NewAgent, SaveFile, Tree, Usage
 from apps.agents.models.knowledge import Note, Skills
 from apps.credentials.models.credential import Deleted
 from apps.agents.services import agent_service as service
@@ -46,6 +46,17 @@ async def get_agent(agent_id: OwnedAgent, user: CurrentUser, session: Db) -> Age
 @router.patch("/{agent_id}", summary="Rename an agent or change its job", tags=["agents"])
 async def update_agent(agent_id: OwnedAgent, body: AgentUpdate, user: CurrentUser, session: Db) -> Agent:
     return await service.update_agent(session, user.id, agent_id, body)
+
+
+@router.delete("/{agent_id}", summary="Delete an agent with its files, skills, notes and chats, for good", tags=["agents"])
+async def delete_agent(agent_id: OwnedAgent, user: CurrentUser, session: Db) -> Deleted:
+    await service.delete_agent(get_settings(), session, user.id, agent_id)
+    return Deleted(deleted=True)
+
+
+@router.get("/{agent_id}/usage", summary="Disk the agent's files take, and its limit", tags=["agents"])
+async def usage(agent_id: OwnedAgent) -> Usage:
+    return await service.usage(get_settings(), agent_id)
 
 
 @router.get("/{agent_id}/tree", summary="List the files in an agent's workspace, without .git", tags=["agents"])

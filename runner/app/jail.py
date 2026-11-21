@@ -45,6 +45,8 @@ class Settings:
     network: bool
     timeout_max: int
     memory_mb: int
+    # Workspace plus home, per agent.
+    disk_mb: int = 2048
     nsjail: str = "nsjail"
 
 
@@ -54,6 +56,7 @@ def load_settings(env: Mapping[str, str] = os.environ) -> Settings:
         network=env.get("RUNNER_JAIL_NETWORK", "1") == "1",
         timeout_max=int(env.get("RUNNER_TIMEOUT_MAX", "1800")),
         memory_mb=int(env.get("RUNNER_JAIL_MEMORY_MB", "4096")),
+        disk_mb=int(env.get("RUNNER_AGENT_DISK_MB", "2048")),
     )
 
 
@@ -127,7 +130,9 @@ def build_argv(
     cwd: str | None = None,
     env: Mapping[str, str] | None = None,
     lib64_exists: bool | None = None,
+    fsize_mb: int = 1024,
 ) -> list[str]:
+    """`fsize_mb` is the largest file the jail may write; 0 lets it read and delete but not write."""
     workspace = workspace_dir(settings, workspace_id)
     home = home_dir(settings, workspace_id)
     if lib64_exists is None:
@@ -148,7 +153,7 @@ def build_argv(
         "--cgroup_mem_swap_max", "0",
         "--cgroup_pids_max", str(PIDS_MAX),
         "--rlimit_cpu", str(timeout),
-        "--rlimit_fsize", "1024",
+        "--rlimit_fsize", str(fsize_mb),
         "--rlimit_nofile", "1024",
         "-R", "/bin", "-R", "/lib",
     ]
@@ -171,6 +176,9 @@ def build_argv(
         "-E", "GIT_AUTHOR_NAME=Echo", "-E", "GIT_AUTHOR_EMAIL=agent@echo.local",
         "-E", "GIT_COMMITTER_NAME=Echo", "-E", "GIT_COMMITTER_EMAIL=agent@echo.local",
     ]
+    if fsize_mb == 0:
+        # git status otherwise refreshes the index, a write that the file size limit kills.
+        argv += ["-E", "GIT_OPTIONAL_LOCKS=0"]
     for pair in _check_env(env):
         argv += ["-E", pair]
     if settings.network:

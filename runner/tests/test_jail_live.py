@@ -239,3 +239,21 @@ def test_entrypoint_fails_closed_when_iptables_fails(tmp_path):
         env={"PATH": f"{fake}:/usr/bin:/bin", "RUNNER_JAIL_NETWORK": "1"}, capture_output=True, text=True,
     )
     assert r.returncode != 0 and "started" not in r.stdout
+
+
+def test_full_workspace_can_delete_but_not_write(live_settings):
+    from fastapi.testclient import TestClient
+
+    from app import usage
+
+    client = TestClient(main.create_app(jail.Settings(data_dir=DATA, network=True, timeout_max=60, memory_mb=1024, disk_mb=1)))
+    ws = new_ws(client)
+    run(client, ws, "head -c 2000000 /dev/zero > big && git add big && git commit -qm big")
+    usage.forget(ws)  # the after-command measurement runs in the background; measure now
+    out, err, end = run(client, ws, "git status --short; echo more > other; echo exit=$?")
+    assert "files cannot be written" in err and "exit=0" not in out
+    out, _, end = run(client, ws, "git rm -q --cached big >/dev/null 2>&1; rm big; ls")
+    assert "big" not in out.split()
+    usage.forget(ws)
+    out, err, end = run(client, ws, "echo ok > small && cat small")
+    assert out.strip() == "ok" and "files cannot be written" not in err

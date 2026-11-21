@@ -2,7 +2,7 @@ import { Alert, Box, Link, Tab, Tabs, Typography } from '@mui/material'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link as RouterLink, useParams } from 'react-router'
 import { api, ApiError, errorText } from '../api/client'
-import type { Agent as AgentRecord, GitFileStatus, Tree } from '../api/types'
+import type { Agent as AgentRecord, GitFileStatus, Storage, Tree } from '../api/types'
 import { Chat } from '../agent/Chat'
 import { Editor } from '../agent/Editor'
 import { Explorer } from '../agent/Explorer'
@@ -23,6 +23,7 @@ function AgentPage({ agentId }: { agentId: string }) {
   const [missing, setMissing] = useState(false)
   const [tree, setTree] = useState<Tree | null>(null)
   const [statuses, setStatuses] = useState<GitFileStatus[]>([])
+  const [storage, setStorage] = useState<Storage | null>(null)
   const [error, setError] = useState('')
   const files = useOpenFiles(agentId)
   const [tab, setTab] = useState<'files' | 'skills' | 'notes'>('files')
@@ -42,6 +43,8 @@ function AgentPage({ agentId }: { agentId: string }) {
     } catch (e) {
       setError(errorText(e))
     }
+    // Only a hint, so a failure leaves the line out instead of showing an error.
+    api<Storage>(`/api/agents/${agentId}/usage`).then(setStorage, () => setStorage(null))
   }, [agentId])
 
   useEffect(() => {
@@ -113,7 +116,7 @@ function AgentPage({ agentId }: { agentId: string }) {
               <Tab value="skills" label="Skills" />
               <Tab value="notes" label="Notes" />
             </Tabs>
-            {tab === 'files' && <Explorer tree={tree} letters={letters} active={files.active} onOpen={openFile} onRefresh={afterTurn} onCreate={create} />}
+            {tab === 'files' && <Explorer tree={tree} letters={letters} active={files.active} onOpen={openFile} onRefresh={afterTurn} onCreate={create} storage={storage} />}
             {tab === 'skills' && <Skills agentId={agentId} version={version} onOpen={openFile} />}
             {tab === 'notes' && <Notes agentId={agentId} version={version} />}
           </Box>

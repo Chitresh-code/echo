@@ -2,9 +2,11 @@
 by the agent id. Every file operation runs through the runner, inside that workspace's jail, so a
 path or symlink in it can never reach anything outside it."""
 
+import asyncio
 import base64
 import logging
 import shlex
+import shutil
 import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,10 +22,12 @@ from apps.agents.models.agent import (
     NewAgent,
     Tree,
     TreeEntry,
+    Usage,
 )
 from apps.agents.repositories import agents
 from apps.agents.services.git_status import parse_porcelain
 from apps.agents.services.paths import check_agent_id, safe_relpath
+from apps.chat.services import turn_service
 from core.config import Settings
 from core.errors import AppError
 from sandbox.runner_sandbox import RunnerSandbox, raise_for_runner_error, runner_client
@@ -58,6 +62,8 @@ def _failed(result, what: str) -> AppError:
 
 
 async def create_agent(settings: Settings, db: AsyncSession, owner_id: str, new: NewAgent) -> Agent:
+    if await agents.count_for(db, owner_id) >= settings.max_agents:
+        raise AppError(409, "agent_limit_reached", f"You have {settings.max_agents} agents, the most allowed. Delete one to make another.")
     agent_id = uuid.uuid4().hex
     # The runner first: a failed insert leaves an unused folder, never a row pointing at nothing.
     async with runner_client(settings.runner_socket) as client:
@@ -76,6 +82,28 @@ async def get_agent(db: AsyncSession, owner_id: str, agent_id: str) -> Agent:
     if agent is None:
         raise _not_found()
     return agent
+
+
+async def delete_agent(settings: Settings, db: AsyncSession, owner_id: str, agent_id: str) -> None:
+    """Files first and the row last, so a failure part way leaves the agent listed and the delete
+    can be repeated; every step skips what is already gone."""
+    if turn_service.agent_busy(agent_id):
+        raise AppError(409, "agent_busy", "This agent has a turn in progress. Stop it or wait for it to end, then delete.")
+    async with runner_client(settings.runner_socket) as client:
+        response = await client.delete(f"/workspaces/{agent_id}")
+        if response.status_code != 404:
+            await raise_for_runner_error(response)
+    for folder in ("sessions", "memory"):
+        await asyncio.to_thread(shutil.rmtree, settings.data_dir / folder / check_agent_id(agent_id), ignore_errors=True)
+    await agents.delete(db, agent_id, owner_id)
+    await db.commit()
+
+
+async def usage(settings: Settings, agent_id: str) -> Usage:
+    async with runner_client(settings.runner_socket) as client:
+        response = await client.get(f"/workspaces/{check_agent_id(agent_id)}/usage")
+        await raise_for_runner_error(response)
+    return Usage(**response.json()["data"])
 
 
 async def update_agent(db: AsyncSession, owner_id: str, agent_id: str, change: AgentUpdate) -> Agent:
@@ -124,8 +152,12 @@ async def write_file(settings: Settings, agent_id: str, path: str, content: str)
     data = content.encode("utf-8")
     if len(data) > MAX_FILE_BYTES:
         raise _too_large()
-    sandbox = _sandbox(settings, agent_id)
     rel = safe_relpath(path)
+    # A full workspace's jail cannot write, and this says why instead of a bare failure.
+    space = await usage(settings, agent_id)
+    if space.used_bytes > space.limit_bytes:
+        raise AppError(507, "disk_quota_exceeded", f"This agent uses all of its {space.limit_bytes // (1024 * 1024)} MB of storage. Delete files to save again.")
+    sandbox = _sandbox(settings, agent_id)
     try:
         await sandbox.write_file(f"{sandbox.root}/{rel}", data)
     except OSError:

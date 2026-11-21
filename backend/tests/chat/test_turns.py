@@ -316,3 +316,37 @@ def test_broken_skills_are_named_in_the_instructions(monkeypatch, fake_runner):
 
 def test_instructions_without_broken_skills_add_nothing():
     assert "need fixing" not in agent_factory.instructions("/w", get_settings(), "A", "")
+
+
+def test_too_many_turns_is_429(client, user, fake_runner, monkeypatch):
+    own(client, user, WS)
+    monkeypatch.setenv("ECHO_MAX_RUNNING_TURNS", "1")
+    get_settings.cache_clear()
+    turn_service._running[user] = 1
+    try:
+        response = client.post(TURNS, json=turn("hi", ANY_KEY))
+    finally:
+        turn_service._running.clear()
+    assert response.status_code == 429 and response.json()["error"]["code"] == "too_many_turns"
+
+
+async def test_running_turns_are_counted_per_user_and_released(fake_runner):
+    fake_runner.lines = [DONE]
+    fake_runner.hold = "sleep 100"
+    first = turn_service.stream_turn("k5", agent_maker(shell_then_done("sleep 100")), "go", 60, user_id="u1", max_running=1)
+    assert (await anext(first)).startswith("event: text")
+    # The same user's second chat is refused; another user is not.
+    second = [e async for e in turn_service.stream_turn("k6", agent_maker(shell_then_done()), "go", 60, user_id="u1", max_running=1)]
+    assert len(second) == 1 and "too_many_turns" in second[0]
+    assert turn_service.can_start("u2", 1)
+    await first.aclose()
+    await wait_for(lambda: turn_service.can_start("u1", 1))
+    assert "u1" not in turn_service._running
+
+
+async def test_a_failed_turn_releases_its_slot(fake_runner):
+    def explode():
+        raise RuntimeError("boom")
+
+    [e async for e in turn_service.stream_turn("k7", explode, "go", 60, user_id="u3", max_running=1)]
+    await wait_for(lambda: turn_service.can_start("u3", 1))

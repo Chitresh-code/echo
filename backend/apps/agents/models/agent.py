@@ -70,3 +70,10 @@ class GitFileVersions(BaseModel):
     # null when the file is not in the last commit (new, or no commit yet), or no longer on disk.
     head: FileContent | None
     working: FileContent | None
+
+
+class Usage(BaseModel):
+    """Disk the agent's workspace and home take, and the most they may take."""
+
+    used_bytes: int
+    limit_bytes: int

@@ -115,4 +115,6 @@ async def test_binary_file_round_trips_through_the_real_runner():
     await sandbox.write_file("nested/dir/blob.bin", content)
     assert await sandbox.read_file("nested/dir/blob.bin") == content
     assert (await sandbox.execute("git rev-parse --is-inside-work-tree")).stdout == "true\n"
+    async with runner_client(socket_path) as client:
+        (await client.delete(f"/workspaces/{ws}")).raise_for_status()
 

@@ -28,3 +28,5 @@ def test_turn_edits_and_commits_in_the_jail(client, user, monkeypatch):
     assert client.get(f"/api/agents/{ws}/git/status").json()["data"] == []
     # The environment plugin read AGENTS.md through the jail and gave it to the model.
     assert "Use tabs." in str(model.first_messages)
+    # The real delete removes the workspace the turn wrote to.
+    assert client.delete(f"/api/agents/{ws}").json()["data"] == {"deleted": True}

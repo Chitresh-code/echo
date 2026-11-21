@@ -18,7 +18,11 @@ def data(r):
 
 @pytest.fixture
 def ws(client):
-    return data(client.post("/api/agents", json={"name": "Test agent"}))["id"]
+    agent_id = data(client.post("/api/agents", json={"name": "Test agent"}))["id"]
+    yield agent_id
+    # Through the real delete, which also checks it against the real runner.
+    assert data(client.delete(f"/api/agents/{agent_id}")) == {"deleted": True}
+    assert client.get(f"/api/agents/{agent_id}").status_code == 404
 
 
 def save(client, ws, path, content):

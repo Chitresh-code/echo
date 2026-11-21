@@ -8,6 +8,18 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
+## 0.8.0 (2026-11-22)
+
+Quotas, so one user cannot take over the sandbox host.
+
+### Added
+- Agents can be deleted, with the bin next to each agent on the Agents page or `DELETE /api/agents/{id}`. It removes the agent's files, home, skills, notes and chats for good, and is refused with `agent_busy` while one of its chats is answering.
+- Each agent may use 2 GB for its files and home (`ECHO_AGENT_DISK_MB`). The runner measures after each command; over the limit the agent can still read and delete but not write, and is told so on its next command. Saving from the editor answers `disk_quota_exceeded`. The Files tab shows how much the agent uses, and `GET /api/agents/{id}/usage` returns it.
+- Each user may have 10 agents (`ECHO_MAX_AGENTS`, `agent_limit_reached`) and 2 replies running at once across their chats (`ECHO_MAX_RUNNING_TURNS`, 429 `too_many_turns`).
+
+### Changed
+- The stack tests delete the agents and workspaces they create.
+
 ## 0.7.1 (2026-11-22)
 
 ### Fixed

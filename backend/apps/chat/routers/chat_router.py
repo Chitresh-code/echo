@@ -42,6 +42,8 @@ async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user:
     chat_key = f"{agent_id}/{chat_id}"
     if turn_service.is_busy(chat_key):
         raise AppError(409, "chat_busy", "This chat already has a turn in progress.")
+    if not turn_service.can_start(user.id, settings.max_running_turns):
+        raise AppError(429, "too_many_turns", turn_service.too_many_turns_message(settings.max_running_turns))
     # Looked up before the stream starts, so a missing or someone else's key is a plain 404. The
     # plain key lives only on this model's client, in this process; it never reaches the sandbox.
     credential, key = await credential_service.with_key(settings, session, user.id, body.credential_id)
@@ -62,6 +64,8 @@ async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user:
         body.prompt,
         settings.turn_timeout,
         lambda: knowledge_service.skill_hashes(settings, agent_id),
+        user.id,
+        settings.max_running_turns,
     )
     # No buffering by a proxy, so events reach the browser as they happen.
     return StreamingResponse(stream, media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})

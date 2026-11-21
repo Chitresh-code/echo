@@ -88,3 +88,11 @@ def test_timeout_capped(settings):
     assert jail.effective_timeout(settings, 7) == 7
     with pytest.raises(jail.JailError):
         jail.effective_timeout(settings, 0)
+
+
+def test_file_size_limit_and_full_workspace(settings, ws_id):
+    argv = jail.build_argv(settings, ws_id, SCRIPT, 10, lib64_exists=False)
+    assert _pairs(argv, "--rlimit_fsize") == ["1024"] and "GIT_OPTIONAL_LOCKS=0" not in argv
+    # A workspace over its disk limit: nothing can be written, and git status must not try to.
+    argv = jail.build_argv(settings, ws_id, SCRIPT, 10, lib64_exists=False, fsize_mb=0)
+    assert _pairs(argv, "--rlimit_fsize") == ["0"] and "GIT_OPTIONAL_LOCKS=0" in _pairs(argv, "-E")

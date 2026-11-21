@@ -73,6 +73,8 @@ ECHO_SECRET_KEY=a key you generate, see below</code></pre>
       <p>or, without the cryptography package, <code>openssl rand -base64 32 | tr '+/' '-_'</code>.</p>
       <div class="tip warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg><p>Keep the secret key safe and do not change it. With a different key, every stored model key becomes unreadable and everyone has to add theirs again.</p></div>
 
+      <p>Optional limits, also in <code>.env</code>: <code>ECHO_AGENT_DISK_MB</code> is each agent's storage in MB (2048), <code>ECHO_MAX_AGENTS</code> the agents each person may have (10), and <code>ECHO_MAX_RUNNING_TURNS</code> the replies each person may have running at once (2). With the defaults, one person can use at most 20 GB, so size the disk for the number of people times that.</p>
+
       <h2 id="start">Start Echo</h2>
       <pre><code>docker compose up --build</code></pre>
       <p>Echo will not start if a setting is missing or malformed, and it says which one without printing secret values. Settings are read only when Echo starts, so restart it after changing <code>.env</code>:</p>

@@ -5,7 +5,8 @@ import NoteAddOutlined from '@mui/icons-material/NoteAddOutlined'
 import Refresh from '@mui/icons-material/Refresh'
 import { Box, ButtonBase, IconButton, InputBase, Tooltip, Typography } from '@mui/material'
 import { useMemo, useState } from 'react'
-import type { Tree } from '../api/types'
+import type { Storage, Tree } from '../api/types'
+import { bytes, storageLevel } from '../format'
 import { MONO } from '../theme'
 import { buildRows } from './tree'
 
@@ -16,9 +17,10 @@ type Props = {
   onOpen: (path: string) => void
   onRefresh: () => void
   onCreate: (path: string) => void
+  storage: Storage | null
 }
 
-export function Explorer({ tree, letters, active, onOpen, onRefresh, onCreate }: Props) {
+export function Explorer({ tree, letters, active, onOpen, onRefresh, onCreate, storage }: Props) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [naming, setNaming] = useState<string | null>(null)
   const rows = useMemo(() => buildRows(tree?.entries ?? [], letters, expanded), [tree, letters, expanded])
@@ -101,6 +103,19 @@ export function Explorer({ tree, letters, active, onOpen, onRefresh, onCreate }:
           <Typography component="li" color="text.secondary" sx={{ px: 2, py: 1, fontSize: 12 }}>No files yet.</Typography>
         )}
       </Box>
+      {storage && <StorageLine storage={storage} />}
+    </Box>
+  )
+}
+
+const LEVEL_COLOR = { ok: 'text.secondary', warning: 'warning.main', error: 'error.main' } as const
+
+function StorageLine({ storage }: { storage: Storage }) {
+  const level = storageLevel(storage.used_bytes, storage.limit_bytes)
+  return (
+    <Box sx={{ px: 2, py: 1, borderTop: 1, borderColor: 'divider', fontSize: 12, color: LEVEL_COLOR[level] }}>
+      <Box component="span" sx={{ fontFamily: MONO }}>{bytes(storage.used_bytes)}</Box> of {bytes(storage.limit_bytes)} used
+      {level === 'error' && <Box sx={{ mt: 0.25 }}>Full: delete files, or ask the agent to, before it can write again.</Box>}
     </Box>
   )
 }

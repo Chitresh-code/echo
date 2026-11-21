@@ -86,8 +86,15 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
         <li><code>GET /api/agents/{id}</code> returns one, and <code>PATCH /api/agents/{id}</code> with <code>name</code> or <code>job</code> changes it.</li>
         <li><code>GET /api/agents/{id}/skills</code> lists its skills with their description and <code>status</code>: <code>ok</code>, <code>warning</code> or <code>skipped</code>, with the <code>problem</code>.</li>
         <li><code>GET /api/agents/{id}/notes</code> lists its notes, newest first, and <code>DELETE /api/agents/{id}/notes/{name}</code> forgets one. A missing note answers <code>note_not_found</code>.</li>
+        <li><code>GET /api/agents/{id}/usage</code> returns <code>used_bytes</code> and <code>limit_bytes</code> for its files and home.</li>
+        <li><code>DELETE /api/agents/{id}</code> deletes the agent with its files, skills, notes and chats, for good.</li>
       </ul>
       <p>Someone else's agent answers <code>agent_not_found</code>, the same as one that does not exist.</p>
+      <dl class="codes">
+        <dt><code>agent_limit_reached</code></dt><dd>You have as many agents as allowed (10 by default). Delete one first.</dd>
+        <dt><code>agent_busy</code></dt><dd>A delete while one of the agent's chats is answering. Wait for it to end.</dd>
+        <dt><code>disk_quota_exceeded</code></dt><dd>Saving a file to an agent over its storage limit (507).</dd>
+      </dl>
 
       <h2 id="files">Files and changes</h2>
       <ul>
@@ -118,7 +125,7 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
         <dt><code>error</code></dt><dd>The turn stopped early. It has a <code>code</code> and, when the server failed, a <code>request_id</code>.</dd>
       </dl>
       <ul>
-        <li>One message at a time per chat: another one while the agent works answers <code>chat_busy</code>.</li>
+        <li>One message at a time per chat: another one while the agent works answers <code>chat_busy</code>. More than 2 replies running at once across your chats (by default) answers 429 <code>too_many_turns</code>.</li>
         <li>A key id that is not yours answers <code>credential_not_found</code>. A model the key cannot use, or a key the provider has revoked, fails with <code>turn_failed</code> once the turn starts.</li>
         <li>A turn stops after 30 minutes (<code>ECHO_TURN_TIMEOUT</code>). Each command stops after 2 minutes (<code>ECHO_COMMAND_TIMEOUT</code>) unless the agent asks for longer, up to 30 (<code>ECHO_COMMAND_TIMEOUT_MAX</code>).</li>
         <li>Stopping <code>curl</code> stops the turn and the command that was running. The app's stop button does not: there the turn finishes on the server.</li>

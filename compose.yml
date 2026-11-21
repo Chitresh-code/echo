@@ -8,6 +8,9 @@ services:
       context: ./runner
       target: app
     privileged: true
+    # Set in .env like the api's settings; compose fills it in.
+    environment:
+      RUNNER_AGENT_DISK_MB: ${ECHO_AGENT_DISK_MB:-2048}
     volumes:
       - sandbox-data:/data
       - runner-socket:/run/echo

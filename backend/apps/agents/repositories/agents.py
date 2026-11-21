@@ -44,6 +44,15 @@ async def update(db: AsyncSession, agent_id: str, owner_id: str, fields: dict) -
     await db.execute(agents.update().where(agents.c.id == agent_id, agents.c.owner_id == owner_id).values(**fields))
 
 
+async def count_for(db: AsyncSession, owner_id: str) -> int:
+    query = sa.select(sa.func.count()).select_from(agents).where(agents.c.owner_id == owner_id)
+    return (await db.execute(query)).scalar_one()
+
+
+async def delete(db: AsyncSession, agent_id: str, owner_id: str) -> None:
+    await db.execute(agents.delete().where(agents.c.id == agent_id, agents.c.owner_id == owner_id))
+
+
 async def touch(db: AsyncSession, agent_id: str) -> None:
     await db.execute(agents.update().where(agents.c.id == agent_id).values(last_used_at=datetime.now(UTC)))
 
