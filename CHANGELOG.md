@@ -8,6 +8,11 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
+## 0.6.1 (2026-11-22)
+
+### Fixed
+- Opening `/docs` without a trailing slash showed the browser app instead of the user guide. It now redirects to `/docs/`.
+
 ## 0.6.0 (2026-11-22)
 
 Workflow learning: the agent knows its job, saves what it learns as skills, and the app shows its skills and notes.

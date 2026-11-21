@@ -32,6 +32,8 @@ def test_api_and_guide_keep_their_own_answers(tmp_path, fake_runner):
         assert client.get("/api").status_code == 404
         assert "content-security-policy" not in client.get("/api/health").headers
         assert client.get("/api/health").json()["data"] == {"status": "ok"}
+        bare = client.get("/docs", follow_redirects=False)
+        assert bare.status_code == 307 and bare.headers["location"] == "/docs/"
         guide = client.get("/docs/")
         assert guide.status_code == 200 and "id=root" not in guide.text and guide.headers["content-security-policy"]
 

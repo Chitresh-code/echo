@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from fastapi import Depends, FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
@@ -61,6 +62,12 @@ def create_app(web_dir: Path | None = None) -> FastAPI:
     app.include_router(credential_router)
     app.include_router(agent_router)
     app.include_router(chat_router)
+
+    # The mount only matches /docs/..., so without this a bare /docs would reach the web app's
+    # catch-all and show the app instead of the guide.
+    @app.get("/docs", include_in_schema=False)
+    def guide_root() -> RedirectResponse:
+        return RedirectResponse("/docs/")
 
     app.mount("/docs", StaticFiles(directory=DOCS_DIR, html=True), name="docs")
     serve_web_app(app, web_dir or WEB_DIR)
