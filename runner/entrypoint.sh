@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs the jail firewall, then runs the given command (the runner). Any failure stops the
+# Installs the jail firewall and the jail cgroups, then runs the given command (the runner). Any failure stops the
 # container, so jails are never on the network without the firewall.
 set -eu
 
@@ -31,5 +31,17 @@ if [ "${RUNNER_JAIL_NETWORK:-1}" = "1" ]; then
     ip6tables -A ECHO_JAIL -d "$net" -j REJECT
   done
 fi
+
+# Jail memory and process limits use cgroup v2. A cgroup can hand controllers to its children only
+# while it holds no processes itself, so every process here moves into init/ first; nsjail then
+# makes one child of jails/ per command. Fails the start if the controllers cannot be enabled.
+cg=/sys/fs/cgroup
+mkdir -p "$cg/init" "$cg/jails"
+for pid in $(cat "$cg/cgroup.procs"); do
+  # A process may exit between the read and the move.
+  echo "$pid" > "$cg/init/cgroup.procs" 2>/dev/null || true
+done
+echo "+memory +pids" > "$cg/cgroup.subtree_control"
+echo "+memory +pids" > "$cg/jails/cgroup.subtree_control"
 
 exec "$@"

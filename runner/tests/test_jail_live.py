@@ -133,6 +133,23 @@ def test_private_and_metadata_addresses_refused(client, local_server, target):
     assert code == "000" and curl_exit != "0"
 
 
+def test_webassembly_runs(client):
+    # Node reserves gigabytes of address space per WebAssembly memory, which an address-space cap refuses.
+    out, err, end = run(client, new_ws(client), "node -e 'new WebAssembly.Memory({initial: 1, maximum: 65536}); console.log(\"ok\")'")
+    assert out == "ok\n" and end["exit_code"] == 0, err
+
+
+def test_memory_limit_kills_the_jail(live_settings):
+    from fastapi.testclient import TestClient
+
+    small = jail.Settings(data_dir=DATA, network=True, timeout_max=60, memory_mb=128)
+    client = TestClient(main.create_app(small))
+    _, _, end = run(client, new_ws(client), "node -e 'const a = []; for (;;) a.push(Buffer.alloc(16 << 20, 1))'", timeout=30)
+    # Killed by the cgroup's OOM killer (SIGKILL), well before the time limit.
+    assert end["exit_code"] == jail.KILLED_EXIT and end["timed_out"] is False
+    assert not [d for d in Path(jail.CGROUP_PARENT).iterdir() if d.name.startswith("NSJAIL")]
+
+
 def test_time_limit(client):
     ws = new_ws(client)
     started = time.monotonic()

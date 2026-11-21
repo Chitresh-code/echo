@@ -22,7 +22,7 @@ services:
       context: .
       dockerfile: backend/Dockerfile
       target: app
-    # shortcut: bound to this machine only, because jails have no cgroup, seccomp or egress abuse limits yet; publish it on another address only after that hardening.
+    # shortcut: bound to this machine only, because jails have no CPU share, seccomp or egress abuse limits yet; publish it on another address only after that hardening.
     ports:
       - "127.0.0.1:${ECHO_PORT:-8000}:8000"
     env_file:

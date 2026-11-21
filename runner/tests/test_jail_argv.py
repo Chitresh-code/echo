@@ -21,7 +21,10 @@ def test_identity_mounts_and_command(settings, ws_id):
     assert _pairs(argv, "-B") == [ws, f"{settings.data_dir}/homes/{ws_id}:/home/echo"]
     assert _pairs(argv, "--cwd") == [ws]
     assert _pairs(argv, "-t") == ["10"] and _pairs(argv, "--rlimit_cpu") == ["10"]
-    assert _pairs(argv, "--rlimit_as") == ["4096"]
+    assert _pairs(argv, "--rlimit_as") == ["max"]
+    assert "--use_cgroupv2" in argv and _pairs(argv, "--cgroupv2_mount") == ["/sys/fs/cgroup/jails"]
+    assert _pairs(argv, "--cgroup_mem_max") == [str(4096 * 1024 * 1024)] and _pairs(argv, "--cgroup_mem_swap_max") == ["0"]
+    assert _pairs(argv, "--cgroup_pids_max") == ["1024"]
     assert argv[-3:] == ["--", "/bin/sh", str(SCRIPT)]
 
 

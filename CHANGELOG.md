@@ -26,7 +26,11 @@ Every change adds a line under the current version heading (the newest one, mark
 - A turn names the key and model it runs on: `credential_id` and `model` in the turn's body. A missing or someone else's key answers 404 `credential_not_found` before the turn starts. There is no server-wide model list or provider key any more: `ECHO_MODELS`, `ANTHROPIC_API_KEY` and the like are not read, and startup logs a warning when `ECHO_MODELS` is still set.
 - api and sandbox images and `compose.yml`. The api runs unprivileged as a non-root user on 127.0.0.1; the sandbox image carries nsjail 3.4 and the toolchains jails use (Python 3.12, Node 22, uv, git, ripgrep, build tools).
 
+### Fixed
+- Tools that use WebAssembly on Node 22, such as a Vite build, failed in jails with a WebAssembly memory error. Jails no longer cap address space; `RUNNER_JAIL_MEMORY_MB` (default 4096) now limits the memory a jail actually uses.
+
 ### Security
+- Each jail runs in its own cgroup with a memory limit (`RUNNER_JAIL_MEMORY_MB`, no swap) and at most 1024 processes, so one workspace cannot use up the host's memory or fork without limit. A jail that goes over its memory has its largest process killed. The sandbox needs cgroup v2 with the memory and pids controllers, and refuses to start without them.
 - A POST, PUT, PATCH or DELETE whose `Origin` (or `Referer`) is not `ECHO_PUBLIC_URL` is refused with 403 `bad_origin`, so another site's page cannot act with a signed-in user's cookie. Open Echo at exactly that address. Clients like `curl` that send neither header are not affected.
 - Sign-in uses the authorization code flow with PKCE, and the ID token's signature, audience, expiry, nonce, issuer and tenant are all checked. The session cookie is HttpOnly, SameSite=Lax and Secure when Echo is served over https; the database keeps only a hash of it. A failed sign-in tells the browser only an error code.
 - Provider keys are stored encrypted with `ECHO_SECRET_KEY` and never returned. Changing that key makes stored keys unreadable (`credential_unreadable`), so they must be added again.

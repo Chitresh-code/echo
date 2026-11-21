@@ -24,6 +24,10 @@ KILLED_EXIT = 137
 BACKSTOP_SECONDS = 5
 # How long a jail gets to exit after SIGTERM before it is killed.
 KILL_GRACE_SECONDS = 2
+# The container entrypoint delegates the memory and pids controllers to this cgroup.
+CGROUP_PARENT = "/sys/fs/cgroup/jails"
+# Enough for parallel builds and test runners; stops a fork bomb from starving other jails.
+PIDS_MAX = 1024
 
 
 class JailError(Exception):
@@ -135,8 +139,14 @@ def build_argv(
         "-t", str(timeout),
         # nsjail's own defaults (1 MB files, 32 open files, 600 s of CPU) are too small for
         # package installs and builds, so every limit is set here.
-        # shortcut: rlimits only, no cgroup memory, process or CPU share limits and no seccomp policy; add them before Echo is open to the public.
-        "--rlimit_as", str(settings.memory_mb),
+        # shortcut: no CPU share limit and no seccomp policy; add them before Echo is open to the public.
+        # Memory is capped by the jail's cgroup, not by address space: WebAssembly (Node 22 tools
+        # such as Vite) reserves far more address space than it uses and fails under an rlimit.
+        "--rlimit_as", "max",
+        "--use_cgroupv2", "--cgroupv2_mount", CGROUP_PARENT,
+        "--cgroup_mem_max", str(settings.memory_mb * 1024 * 1024),
+        "--cgroup_mem_swap_max", "0",
+        "--cgroup_pids_max", str(PIDS_MAX),
         "--rlimit_cpu", str(timeout),
         "--rlimit_fsize", "1024",
         "--rlimit_nofile", "1024",
