@@ -3,9 +3,15 @@ name = "echo"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "aiosqlite>=0.22.1",
+    "alembic>=1.20.1",
+    "authlib>=1.9.10",
+    "cryptography>=50.0.2",
     "fastapi[standard]>=0.165.0",
     "httpx>=0.28",
-    "strands-agents[anthropic,gemini,litellm,openai]>=1.65.0",
+    "itsdangerous>=2.2.0",
+    "sqlalchemy[asyncio]>=2.1",
+    "strands-agents[anthropic,gemini,openai]>=1.65.0",
     "strands-harness>=0.4.0",
 ]
 

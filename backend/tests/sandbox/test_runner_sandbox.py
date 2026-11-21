@@ -116,15 +116,3 @@ async def test_binary_file_round_trips_through_the_real_runner():
     assert await sandbox.read_file("nested/dir/blob.bin") == content
     assert (await sandbox.execute("git rev-parse --is-inside-work-tree")).stdout == "true\n"
 
-
-def test_startup_fails_for_an_unusable_model(monkeypatch, fake_runner):
-    from fastapi.testclient import TestClient
-
-    from core.config import get_settings
-    from main import create_app
-
-    monkeypatch.setenv("ECHO_MODELS", "nosuchprovider/some-model")
-    get_settings.cache_clear()
-    with pytest.raises(RuntimeError, match="nosuchprovider/some-model cannot be used"):
-        with TestClient(create_app()):
-            pass

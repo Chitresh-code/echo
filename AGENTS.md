@@ -7,11 +7,11 @@ This file gives coding agents (Claude Code and others) the guidance they need to
 Echo is a hosted coding and workspace agent used from the browser. Each user works in workspaces that look like a small IDE (file tree, editor, git diff, chat), and an agent does the work inside an isolated jail per workspace. The agent keeps notes and skills per workspace, so it gets better at the workflows each user repeats.
 
 Services, each its own container:
-- `backend/` is the api: FastAPI on Python 3.12, managed with `uv` (`pyproject.toml`, `uv.lock`). It serves the browser, holds the model provider keys and runs the agent, which is Strands harness (`strands-harness`). Models are chosen by `provider/model` strings, including any LiteLLM model through `litellm/<model>`, so no provider is hard wired. Runs unprivileged.
+- `backend/` is the api: FastAPI on Python 3.12, managed with `uv` (`pyproject.toml`, `uv.lock`). It serves the browser, keeps each user's model provider keys encrypted, and runs the agent, which is Strands harness (`strands-harness`). A turn names one of the user's keys and a model that key can use; Anthropic, OpenAI, Google and OpenAI-compatible endpoints are supported. Runs unprivileged.
 - `runner/` is the sandbox service. It owns the workspaces and starts an nsjail jail per command, on demand. Runs privileged and holds no secrets.
 - `web/` (not created yet) will be the React + Vite + Monaco frontend.
 
-So far the backend has its core plumbing and a health check, and the runner creates workspaces and runs jailed commands. The backend has the Workspaces API (`backend/apps/workspaces/`), which reaches the runner through `RunnerSandbox`. Chat lives in `backend/apps/chat/`: `agent_factory.py` builds the Strands harness agent for one turn with the workspace's `RunnerSandbox`, and `turn_service.py` runs it as a task that streams server-sent events. Tests drive turns with `tests/helpers/scripted_model.py`, a model that plays back fixed replies, so no test calls a provider. The agent's model choice, tools and instructions are a basic first version, to be refined one piece at a time. Known shortcuts carry a `shortcut:` comment saying the limit and when to lift it; list them with `grep -rn "shortcut:" backend runner`.
+So far the backend has its core plumbing and a health check, and the runner creates workspaces and runs jailed commands. Users sign in with Microsoft Entra (`backend/apps/accounts/`), and the api keeps its records in SQLite through SQLAlchemy, migrated with Alembic at startup (`core/db.py`, `migrations/`). Users store their own provider keys encrypted (`backend/apps/credentials/`). The backend has the Workspaces API (`backend/apps/workspaces/`), each workspace owned by one user, which reaches the runner through `RunnerSandbox`. Chat lives in `backend/apps/chat/`: `agent_factory.py` builds the Strands harness agent for one turn with the workspace's `RunnerSandbox`, and `turn_service.py` runs it as a task that streams server-sent events. Tests drive turns with `tests/helpers/scripted_model.py`, a model that plays back fixed replies, so no test calls a provider, and sign a test client in with `tests/helpers/accounts.py` instead of going through Microsoft. The agent's model choice, tools and instructions are a basic first version, to be refined one piece at a time. Known shortcuts carry a `shortcut:` comment saying the limit and when to lift it; list them with `grep -rn "shortcut:" backend runner`.
 
 ## Commands
 
@@ -19,12 +19,13 @@ So far the backend has its core plumbing and a health check, and the runner crea
 ```bash
 uv sync                  # install dependencies
 uv run pytest            # unit tests against a fake runner on a temporary socket; tests marked `stack` are skipped
-uv run uvicorn main:app --reload   # needs ECHO_MODELS, and ECHO_RUNNER_SOCKET pointing at a running runner, or startup fails
+uv run uvicorn main:app --reload   # needs the account settings in .env.example and ECHO_RUNNER_SOCKET pointing at a running runner, or startup fails
+ECHO_DATA_DIR=/tmp/echo-dev uv run alembic revision -m "what it changes"   # new migration in migrations/versions/; the api applies migrations at startup
 ```
 
 ### Stack (from the repo root)
 ```bash
-cp .env.example .env     # then set ECHO_MODELS and provider keys
+cp .env.example .env     # then set the account settings
 docker compose build
 docker compose up        # api on 127.0.0.1:${ECHO_PORT:-8000}, user guide at /docs, API reference at /api/docs
 docker compose --profile test run --rm api-test       # backend tests inside the api image, including `stack` tests against the real runner
@@ -38,7 +39,11 @@ uv run pytest            # unit tests with a stand-in nsjail; tests marked `jail
 
 ## Architecture notes
 
-**Backend layout**: shared plumbing lives in `backend/core/` (the single settings accessor `config.py`, `AppError` and safe messages, error handlers, the response envelope, request ids, logging). Each domain is a folder under `backend/apps/` split into `routers/`, `services/` and `models/` (and `repositories/` once there is a database). Services stay thin and delegate to small plain-function modules, and pure parsing and mapping live apart from I/O so they can be tested with plain values. Tests under `backend/tests/` are grouped the same way.
+**Backend layout**: shared plumbing lives in `backend/core/` (the single settings accessor `config.py`, `AppError` and safe messages, error handlers, the response envelope, request ids, logging). Each domain is a folder under `backend/apps/` split into `routers/`, `services/` and `models/` (and `repositories/` for database access). Services stay thin and delegate to small plain-function modules, and pure parsing and mapping live apart from I/O so they can be tested with plain values. Tests under `backend/tests/` are grouped the same way.
+
+**Database**: SQLite at `<data>/echo.db` in the api's data volume (`core/db.py`). Alembic migrations in `backend/migrations/` run at every startup before the api serves, so a deploy never needs a separate migration step. Routes get an `AsyncSession` through the `db` dependency. Write migrations by hand with batch mode in mind, since SQLite cannot alter most columns in place.
+
+**Access**: a router outside `/api/auth` and `/api/health` declares `dependencies=[Depends(current_user)]` (`core/auth.py`), and a route that takes a workspace id takes it as `OwnedWorkspace`, which answers 404 `workspace_not_found` unless the signed-in user owns it. Repository reads of owned rows always take the owner id. `check_origin` runs on every request and refuses a POST, PUT, PATCH or DELETE whose `Origin` (or `Referer`) is not `ECHO_PUBLIC_URL`. `tests/accounts/test_access.py` walks every documented route without a session, so a route that forgets the dependency fails there. Provider keys are decrypted only in `credential_service.with_key` and go straight into a provider client; any call to an address a user typed goes through `safe_http.client()`.
 
 **API shape**: every JSON success is `{"success": true, "data": ..., "meta": {"request_id"}}` and every error is `{"success": false, "error": {"code", "message", "details"}, "meta": {"request_id"}}`. Endpoints return their data and the default response class wraps it. Only `AppError` messages reach a caller; anything else becomes a generic message and goes to the log. Streams are not wrapped.
 

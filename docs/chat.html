@@ -12,6 +12,8 @@
       <a class="brand" href="./">Echo</a>
       <a href="./">Overview</a>
       <a href="getting-started.html">Getting started</a>
+      <a href="signing-in.html">Signing in</a>
+      <a href="keys.html">Keys</a>
       <a href="workspaces.html">Workspaces</a>
       <a href="chat.html">Chat</a>
       <a href="/api/docs">API reference</a>
@@ -19,17 +21,19 @@
   </header>
   <main>
     <h1>Chat with the agent</h1>
-    <p>You give the agent a task in a chat, and it does the work in the workspace: it reads and edits files, runs commands, installs packages and commits with git. Everything it runs happens inside the workspace's jail, which can reach the internet but not your machine or your network. Your model keys stay with the Echo server and never reach the jail.</p>
-    <p>There is no chat window in the browser yet, so you chat through the API with <code>curl</code>. The examples assume Echo is on port 8000 and you have a workspace id from the <a href="workspaces.html">Workspaces</a> page.</p>
+    <p>You give the agent a task in a chat, and it does the work in the workspace: it reads and edits files, runs commands, installs packages and commits with git. Everything it runs happens inside the workspace's jail, which can reach the internet but not your machine or your network. Your model provider key stays with the Echo server and never reaches the jail.</p>
+    <p>There is no chat window in the browser yet, so you chat through the API with <code>curl</code>. The examples assume Echo is at <code>http://localhost:8000</code>, <code>$ECHO</code> holds your session cookie (see <a href="signing-in.html">Signing in</a>), you have a workspace id from the <a href="workspaces.html">Workspaces</a> page, and you added a key on the <a href="keys.html">Keys</a> page.</p>
 
     <h2>Start a chat</h2>
-    <pre><code>curl -X POST http://127.0.0.1:8000/api/workspaces/{id}/chats</code></pre>
+    <pre><code>curl -b "$ECHO" -X POST http://localhost:8000/api/workspaces/{id}/chats</code></pre>
     <p>The answer holds the chat's id. A workspace can have many chats. Each one keeps its own conversation, so a later message in the same chat can refer to earlier ones.</p>
 
     <h2>Send a message</h2>
-    <pre><code>curl -N -X POST http://127.0.0.1:8000/api/workspaces/{id}/chats/{chat}/turns \
+    <pre><code>curl -b "$ECHO" -N -X POST http://localhost:8000/api/workspaces/{id}/chats/{chat}/turns \
   -H 'content-type: application/json' \
-  -d '{"prompt": "Create a small Vite site that says hello, build it and commit it"}'</code></pre>
+  -d '{"prompt": "Create a small Vite site that says hello, build it and commit it",
+       "credential_id": "your key id", "model": "claude-sonnet-5-5"}'</code></pre>
+    <p><code>credential_id</code> is the <code>id</code> of one of your keys, and <code>model</code> one of the model ids from <code>GET /api/credentials/{id}/models</code>. Each message names its key and model again. Switching to another provider in the middle of a chat has not been tested and may fail; start a new chat for that. A key id that is not one of yours answers <code>credential_not_found</code>.</p>
     <p>The agent's reply streams back as it works, as server-sent events:</p>
     <ul>
       <li><code>text</code>: a piece of the agent's reply.</li>
@@ -37,7 +41,7 @@
       <li><code>done</code>: the turn is over.</li>
       <li><code>error</code>: the turn stopped early. It has a <code>code</code> and, when the server failed, a <code>request_id</code> to quote when you report it.</li>
     </ul>
-    <p>Add <code>"model"</code> to the body to pick one of the models from <code>GET /api/models</code>. Without it, the turn uses the default, the first one in <code>ECHO_MODELS</code>.</p>
+    <p>A model id the key cannot use, or a key the provider has since revoked, makes the turn fail with <code>turn_failed</code> once it starts; check the list of models for the key.</p>
     <p>Afterwards, look at what changed with the file and git endpoints on the <a href="workspaces.html">Workspaces</a> page.</p>
 
     <h2>What the agent knows about your project</h2>

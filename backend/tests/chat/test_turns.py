@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 
 from apps.chat.services import agent_factory, turn_service
 from core.config import get_settings
+from apps.credentials.services import providers
+from tests.helpers.accounts import add_key, own, sign_in_as
 from tests.helpers.scripted_model import ScriptedModel
 
 WS, CHAT = "a" * 32, "b" * 32
@@ -17,10 +19,12 @@ def shell_then_done(command="echo hi"):
     return ScriptedModel([[("text", "Running it."), ("tool", "shell", {"command": command})], [("text", "Done.")]])
 
 
-def use_model(monkeypatch, model):
-    """Build agents the real way, with the scripted model in place of a provider."""
-    real = agent_factory.build_agent
-    monkeypatch.setattr(agent_factory, "build_agent", lambda s, w, c, m: real(s, w, c, model))
+def use_model(monkeypatch, model) -> list[tuple]:
+    """Build agents the real way, with the scripted model in place of the provider's. Returns the
+    (provider, key, base_url, model) each turn asked for."""
+    asked = []
+    monkeypatch.setattr(providers, "build_model", lambda *args: asked.append(args) or model)
+    return asked
 
 
 def parse(body: str) -> list[tuple[str, dict]]:
@@ -31,14 +35,19 @@ def parse(body: str) -> list[tuple[str, dict]]:
     return events
 
 
+def turn(prompt, credential_id, model="claude-sonnet-5-5"):
+    return {"prompt": prompt, "credential_id": credential_id, "model": model}
+
+
 def run_turn(monkeypatch, fake_runner, model, prompt="say hi"):
     from main import create_app
 
     use_model(monkeypatch, model)
-    fake_runner.workspaces = [WS]
     fake_runner.lines = [DONE]
     with TestClient(create_app()) as client:
-        response = client.post(TURNS, json={"prompt": prompt})
+        user = sign_in_as(client)
+        own(client, user, WS)
+        response = client.post(TURNS, json=turn(prompt, add_key(client, user)))
     assert response.status_code == 200 and response.headers["content-type"].startswith("text/event-stream")
     return parse(response.text)
 
@@ -60,21 +69,53 @@ def test_second_turn_resumes_the_session(monkeypatch, fake_runner):
     assert model.message_counts[calls] >= first + 4
 
 
-def test_create_chat_and_models(client, fake_runner):
-    fake_runner.workspaces = [WS]
+def test_create_chat(client, user, fake_runner):
+    own(client, user, WS)
     chat = client.post(f"/api/workspaces/{WS}/chats").json()["data"]
     assert len(chat["id"]) == 32
-    assert client.get("/api/models").json()["data"] == {"models": ["anthropic/claude-sonnet-5-5", "openai/gpt-5"], "default": "anthropic/claude-sonnet-5-5"}
+
+
+def test_server_model_list_is_gone(client, user):
+    assert client.get("/api/models").status_code == 404
+
+
+def test_turn_runs_on_the_users_stored_key(monkeypatch, client, user, fake_runner):
+    asked = use_model(monkeypatch, shell_then_done())
+    fake_runner.lines = [DONE]
+    own(client, user, WS)
+    key_id = add_key(client, user, key="sk-ant-ada-own-key-1234567890")
+    events = parse(client.post(TURNS, json=turn("hi", key_id, "claude-opus-5-5")).text)
+    assert events[-1][0] == "done"
+    assert asked == [("anthropic", "sk-ant-ada-own-key-1234567890", None, "claude-opus-5-5")]
+    # The key goes to the model client only, never into a command.
+    assert all("sk-ant" not in r["command"] for r in fake_runner.requests)
+
+
+def test_unknown_or_someone_elses_key_is_404_before_the_stream(monkeypatch, client, fake_runner):
+    asked = use_model(monkeypatch, shell_then_done())
+    bob = sign_in_as(client, "bob")
+    bobs_key = add_key(client, bob)
+    ada = sign_in_as(client, "ada")
+    own(client, ada, WS)
+    for key_id in (bobs_key, "f" * 32):
+        response = client.post(TURNS, json=turn("hi", key_id))
+        assert response.status_code == 404 and response.json()["error"]["code"] == "credential_not_found"
+    assert asked == [] and fake_runner.requests == []
+
+
+ANY_KEY = "c" * 32
 
 
 @pytest.mark.parametrize("url, body, status, code", [
-    (TURNS, {"prompt": "hi", "model": "anthropic/not-offered"}, 400, "unknown_model"),
-    (f"/api/workspaces/{WS}/chats/../turns", {"prompt": "hi"}, 404, None),
-    (f"/api/workspaces/{WS}/chats/not-a-chat/turns", {"prompt": "hi"}, 400, "invalid_chat_id"),
-    (f"/api/workspaces/bad/chats/{CHAT}/turns", {"prompt": "hi"}, 400, "invalid_workspace_id"),
-    (TURNS, {"prompt": ""}, 422, "validation_error"),
+    (f"/api/workspaces/{WS}/chats/../turns", turn("hi", ANY_KEY), 404, None),
+    (f"/api/workspaces/{WS}/chats/not-a-chat/turns", turn("hi", ANY_KEY), 400, "invalid_chat_id"),
+    (f"/api/workspaces/bad/chats/{CHAT}/turns", turn("hi", ANY_KEY), 400, "invalid_workspace_id"),
+    (TURNS, turn("", ANY_KEY), 422, "validation_error"),
+    (TURNS, {"prompt": "hi", "model": "claude-sonnet-5-5"}, 422, "validation_error"),
+    (TURNS, turn("hi", ANY_KEY, model="has space"), 422, "validation_error"),
 ])
-def test_bad_requests_are_refused_before_any_command(client, fake_runner, url, body, status, code):
+def test_bad_requests_are_refused_before_any_command(client, user, fake_runner, url, body, status, code):
+    own(client, user, WS)
     response = client.post(url, json=body)
     assert response.status_code == status
     if code:
@@ -83,15 +124,15 @@ def test_bad_requests_are_refused_before_any_command(client, fake_runner, url, b
 
 
 def test_missing_workspace_is_404(client, fake_runner):
-    response = client.post(TURNS, json={"prompt": "hi"})
+    response = client.post(TURNS, json=turn("hi", ANY_KEY))
     assert response.status_code == 404 and response.json()["error"]["code"] == "workspace_not_found"
 
 
-def test_busy_chat_is_409(client, fake_runner):
-    fake_runner.workspaces = [WS]
+def test_busy_chat_is_409(client, user, fake_runner):
+    own(client, user, WS)
     turn_service._busy.add(f"{WS}/{CHAT}")
     try:
-        response = client.post(TURNS, json={"prompt": "hi"})
+        response = client.post(TURNS, json=turn("hi", ANY_KEY))
     finally:
         turn_service._busy.clear()
     assert response.status_code == 409 and response.json()["error"]["code"] == "chat_busy"

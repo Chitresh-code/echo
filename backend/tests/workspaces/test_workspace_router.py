@@ -2,7 +2,14 @@ import base64
 
 import pytest
 
+from tests.helpers.accounts import own
+
 WS = "0123456789abcdef" * 2
+
+
+@pytest.fixture(autouse=True)
+def _owns_ws(client, user):
+    own(client, user, WS)
 
 
 def done(exit_code=0):
@@ -13,11 +20,12 @@ def out(data):
     return {"stream": "stdout", "data": data}
 
 
-def test_create_and_list(client, fake_runner):
+def test_create_and_list_newest_first(client, fake_runner):
     created = client.post("/api/workspaces").json()
     assert created["success"] is True and len(created["data"]["id"]) == 32
+    assert fake_runner.workspaces == [created["data"]["id"]]
     listed = client.get("/api/workspaces").json()
-    assert listed["data"] == [{"id": created["data"]["id"]}] and listed["meta"]["request_id"]
+    assert listed["data"] == [{"id": created["data"]["id"]}, {"id": WS}] and listed["meta"]["request_id"]
 
 
 @pytest.mark.parametrize("url", [

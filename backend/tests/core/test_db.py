@@ -1,0 +1,44 @@
+import sqlite3
+
+from fastapi.testclient import TestClient
+
+from core.config import get_settings
+from core.db import db_path
+
+
+def tables(path):
+    with sqlite3.connect(path) as conn:
+        return {row[0] for row in conn.execute("select name from sqlite_master where type = 'table'")}
+
+
+def test_startup_migrates_a_fresh_database_and_again_is_a_no_op(app, fake_runner):
+    path = db_path(get_settings().data_dir)
+    with TestClient(app):
+        pass
+    assert {"users", "sessions", "workspaces", "credentials", "alembic_version"} <= tables(path)
+    with sqlite3.connect(path) as conn:
+        conn.execute("insert into users values ('u', 't', 'o', null, null, '2026-01-01', '2026-01-01')")
+    # A second start finds the schema current and leaves the data alone.
+    with TestClient(app):
+        pass
+    with sqlite3.connect(path) as conn:
+        assert conn.execute("select count(*) from users").fetchone() == (1,)
+        assert conn.execute("select version_num from alembic_version").fetchone() == ("0001",)
+
+
+def test_requests_get_a_session_with_foreign_keys_on(app, fake_runner):
+    import asyncio
+
+    from sqlalchemy import text
+    from sqlalchemy.exc import IntegrityError
+
+    with TestClient(app):
+        async def insert_orphan():
+            async with app.state.db_engine.begin() as conn:
+                await conn.execute(text("insert into sessions values ('h', 'nobody', '2026-01-01', '2026-01-02')"))
+
+        try:
+            asyncio.run(insert_orphan())
+            raise AssertionError("a session for a missing user was accepted")
+        except IntegrityError:
+            pass

@@ -3,13 +3,14 @@ provider: run with `docker compose --profile test run --rm api-test`."""
 
 import pytest
 
-from tests.chat.test_turns import parse, use_model
+from tests.chat.test_turns import parse, turn, use_model
+from tests.helpers.accounts import add_key
 from tests.helpers.scripted_model import ScriptedModel
 
 pytestmark = pytest.mark.stack
 
 
-def test_turn_edits_and_commits_in_the_jail(client, monkeypatch):
+def test_turn_edits_and_commits_in_the_jail(client, user, monkeypatch):
     ws = client.post("/api/workspaces").json()["data"]["id"]
     client.put(f"/api/workspaces/{ws}/file", json={"path": "AGENTS.md", "content": "Use tabs.\n"})
     model = ScriptedModel([
@@ -20,7 +21,7 @@ def test_turn_edits_and_commits_in_the_jail(client, monkeypatch):
     use_model(monkeypatch, model)
     chat = client.post(f"/api/workspaces/{ws}/chats").json()["data"]["id"]
 
-    events = parse(client.post(f"/api/workspaces/{ws}/chats/{chat}/turns", json={"prompt": "go"}).text)
+    events = parse(client.post(f"/api/workspaces/{ws}/chats/{chat}/turns", json=turn("go", add_key(client, user))).text)
 
     assert [e for e, _ in events] == ["tool", "tool", "text", "done"]
     assert client.get(f"/api/workspaces/{ws}/file?path=hello.txt").json()["data"]["content"] == "hello\n"

@@ -7,6 +7,7 @@ import sys
 
 from core import request_id
 
+# shortcut: keys are found by shape, so a custom endpoint key of another shape is not masked if a library logs it; mask each turn's own key by value if that shows up.
 _SECRETS = [
     (re.compile(r"(?i)(bearer\s+)[^\s\"',]+"), r"\1***"),
     # Provider key shapes: Anthropic and OpenAI style sk- keys, Google AIza keys.

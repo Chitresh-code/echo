@@ -1,10 +1,16 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
 
+from apps.accounts.routers.auth_router import router as auth_router
+from apps.accounts.services.oidc import state_cookie_key
 from apps.chat.routers.chat_router import router as chat_router
+from apps.credentials.routers.credential_router import router as credential_router
+from core.auth import check_origin
+from core.config import get_settings
 from apps.workspaces.routers.workspace_router import router as workspace_router
 from core.error_handlers import register_error_handlers
 from core.log_config import setup_logging
@@ -30,6 +36,14 @@ def create_app() -> FastAPI:
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
         redoc_url=None,
+        dependencies=[Depends(check_origin)],
+    )
+    settings = get_settings()
+    # Holds only the sign-in state (state, nonce and PKCE verifier) for the ten minutes a sign-in may
+    # take. Who is signed in lives in the echo_session cookie, not here.
+    app.add_middleware(
+        SessionMiddleware, secret_key=state_cookie_key(settings), session_cookie="echo_signin", max_age=600,
+        path="/api/auth", same_site="lax", https_only=settings.public_url.startswith("https://"),
     )
     app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
@@ -38,6 +52,8 @@ def create_app() -> FastAPI:
     def health() -> Health:
         return Health(status="ok")
 
+    app.include_router(auth_router)
+    app.include_router(credential_router)
     app.include_router(workspace_router)
     app.include_router(chat_router)
 

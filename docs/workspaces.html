@@ -12,6 +12,8 @@
       <a class="brand" href="./">Echo</a>
       <a href="./">Overview</a>
       <a href="getting-started.html">Getting started</a>
+      <a href="signing-in.html">Signing in</a>
+      <a href="keys.html">Keys</a>
       <a href="workspaces.html">Workspaces</a>
       <a href="chat.html">Chat</a>
       <a href="/api/docs">API reference</a>
@@ -20,11 +22,11 @@
   <main>
     <h1>Workspaces</h1>
     <p>A workspace is a project folder with its own git repository. Everything that happens in it, including reading and saving files, runs inside that workspace's jail, so nothing in one workspace can reach another.</p>
-    <p>There is no editor in the browser yet. Until there is, you use workspaces through the API. Open the <a href="/api/docs">API reference</a> and use "Try it out" on each endpoint, or call them with <code>curl</code>. The examples below assume Echo is on port 8000.</p>
+    <p>There is no editor in the browser yet. Until there is, you use workspaces through the API. <a href="signing-in.html">Sign in</a>, then open the <a href="/api/docs">API reference</a> and use "Try it out" on each endpoint, or call them with <code>curl</code>. The examples below assume Echo is at <code>http://localhost:8000</code> and that you set <code>$ECHO</code> to your session cookie as on the Signing in page.</p>
 
     <h2>Create a workspace</h2>
-    <pre><code>curl -X POST http://127.0.0.1:8000/api/workspaces</code></pre>
-    <p>The answer holds the new workspace's id, 32 letters and digits. Use it in every call below. A new workspace starts as an empty git repository with an <code>.agent/skills/</code> folder, where the agent keeps the workflows it learns. <code>GET /api/workspaces</code> lists your workspaces, newest first.</p>
+    <pre><code>curl -b "$ECHO" -X POST http://localhost:8000/api/workspaces</code></pre>
+    <p>The answer holds the new workspace's id, 32 letters and digits. Use it in every call below. A new workspace starts as an empty git repository with an <code>.agent/skills/</code> folder, where the agent keeps the workflows it learns. <code>GET /api/workspaces</code> lists your workspaces, newest first. Workspaces belong to the person who created them: nobody else can see or use yours, and someone else's workspace answers <code>workspace_not_found</code>, as if it did not exist.</p>
 
     <h2>Files</h2>
     <ul>

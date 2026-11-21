@@ -6,6 +6,7 @@ import logging
 import shlex
 import uuid
 
+from sqlalchemy.ext.asyncio import AsyncSession
 from strands.sandbox.errors import SandboxPathNotFoundError
 
 from apps.workspaces.models.workspace import (
@@ -17,6 +18,7 @@ from apps.workspaces.models.workspace import (
     TreeEntry,
     Workspace,
 )
+from apps.workspaces.repositories import workspaces
 from apps.workspaces.services.git_status import parse_porcelain
 from apps.workspaces.services.paths import check_workspace_id, safe_relpath
 from core.config import Settings
@@ -52,18 +54,18 @@ def _failed(result, what: str) -> AppError:
     return AppError(500, "command_failed", f"The workspace could not {what}.")
 
 
-async def create_workspace(settings: Settings) -> Workspace:
+async def create_workspace(settings: Settings, db: AsyncSession, owner_id: str) -> Workspace:
     workspace_id = uuid.uuid4().hex
+    # The runner first: a failed insert leaves an unused folder, never a row pointing at nothing.
     async with runner_client(settings.runner_socket) as client:
         await raise_for_runner_error(await client.post(f"/workspaces/{workspace_id}"))
+    await workspaces.add(db, workspace_id, owner_id)
+    await db.commit()
     return Workspace(id=workspace_id)
 
 
-async def list_workspaces(settings: Settings) -> list[Workspace]:
-    async with runner_client(settings.runner_socket) as client:
-        response = await client.get("/workspaces")
-        await raise_for_runner_error(response)
-    return [Workspace(id=i) for i in response.json()["data"]]
+async def list_workspaces(db: AsyncSession, owner_id: str) -> list[Workspace]:
+    return [Workspace(id=i) for i in await workspaces.list_for(db, owner_id)]
 
 
 async def tree(settings: Settings, workspace_id: str) -> Tree:
@@ -136,7 +138,9 @@ async def git_file_versions(settings: Settings, workspace_id: str, path: str) ->
     return GitFileVersions(head=head, working=await _read_working(sandbox, rel, missing_ok=True))
 
 
-async def require_workspace(settings: Settings, workspace_id: str) -> None:
+async def require_workspace(db: AsyncSession, owner_id: str, workspace_id: str) -> str:
     check_workspace_id(workspace_id)
-    if workspace_id not in {w.id for w in await list_workspaces(settings)}:
+    # Someone else's workspace answers exactly like a missing one, so ids cannot be probed.
+    if not await workspaces.owns(db, workspace_id, owner_id):
         raise AppError(404, "workspace_not_found", "There is no workspace with this id.")
+    return workspace_id

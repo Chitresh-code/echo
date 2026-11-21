@@ -7,7 +7,6 @@ from strands.models import Model
 from strands_harness import create_harness
 
 from core.config import Settings
-from core.errors import AppError
 from sandbox.runner_sandbox import WORKSPACES_ROOT, RunnerSandbox
 
 
@@ -21,14 +20,7 @@ def instructions(root: str) -> str:
 - Commit your work with git when a task is done, unless the user asks you not to."""
 
 
-def check_model(settings: Settings, model: str | None) -> str:
-    model = model or settings.default_model
-    if model not in settings.models:
-        raise AppError(400, "unknown_model", "The model is not one of the models this server offers.")
-    return model
-
-
-def build_agent(settings: Settings, workspace_id: str, chat_id: str, model: str | Model) -> Agent:
+def build_agent(settings: Settings, workspace_id: str, chat_id: str, model: Model) -> Agent:
     root = f"{WORKSPACES_ROOT}/{workspace_id}"
     return create_harness(
         model=model,

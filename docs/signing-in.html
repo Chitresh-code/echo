@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signing in - Echo docs</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <a class="brand" href="./">Echo</a>
+      <a href="./">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="signing-in.html">Signing in</a>
+      <a href="keys.html">Keys</a>
+      <a href="workspaces.html">Workspaces</a>
+      <a href="chat.html">Chat</a>
+      <a href="/api/docs">API reference</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Signing in</h1>
+    <p>You sign in to Echo with your Microsoft work account, in the organization Echo was set up for. There is no separate Echo password. Your first sign-in creates your Echo account.</p>
+
+    <h2>Sign in</h2>
+    <p>Open <a href="/api/auth/login"><code>/api/auth/login</code></a>. Microsoft asks you to pick your account and, the first time, to agree to share your name and email with Echo. You then land on the <a href="/api/docs">API reference</a>, signed in, and every "Try it out" there runs as you.</p>
+    <p><code>GET /api/auth/me</code> shows who you are signed in as. A session lasts 7 days; after that, sign in again. <code>POST /api/auth/logout</code> ends it straight away.</p>
+
+    <h2>Using your session from curl</h2>
+    <p>Your session is a cookie named <code>echo_session</code>. To use the API from <code>curl</code>, copy its value from your browser's developer tools (Application or Storage, then Cookies, then the Echo address) and send it with every request:</p>
+    <pre><code>curl -b 'echo_session=the value' http://localhost:8000/api/auth/me</code></pre>
+    <p>The examples on the other pages use <code>$ECHO</code> for the cookie, so set it once in your shell:</p>
+    <pre><code>export ECHO='echo_session=the value'</code></pre>
+    <p class="note">Anyone with this value can act as you until the session ends, so do not paste it anywhere shared. Signing out ends it everywhere.</p>
+    <p>Without a session, every API call answers 401 with the code <code>not_signed_in</code>.</p>
+
+    <h2>If sign-in fails</h2>
+    <p>When sign-in does not work you land back on this page, and the address ends with <code>?error=</code> and one of these codes:</p>
+    <ul>
+      <li><code>wrong_tenant</code>: the account you picked is not in the organization Echo is set up for. Sign in again with your work account.</li>
+      <li><code>sign_in_failed</code>: Microsoft did not complete the sign-in, or its answer could not be verified. This also happens when you opened Echo at a different address from the one it is set up with. If you were not given access to Echo in Entra, Microsoft says so on its own page instead. Try again from <a href="/api/auth/login"><code>/api/auth/login</code></a>; if it keeps failing, whoever runs Echo can find the reason in its log.</li>
+    </ul>
+    <p>Someone removed from the organization or from Echo's access in Entra cannot sign in again, but a session they already have stays valid until it ends, up to 7 days later.</p>
+  </main>
+</body>
+</html>
