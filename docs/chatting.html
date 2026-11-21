@@ -51,12 +51,16 @@
       <p><kbd>Enter</kbd> sends and <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line. Your browser remembers the model and effort you chose. You can switch to another model or provider at any message, and the new model sees the whole conversation so far.</p>
 
       <h2 id="follow">Follow along</h2>
-      <p>The reply appears as it is written. Each tool the agent uses shows as a row with the tool's name, such as <code>shell</code>, <code>read</code>, <code>edit</code> or <code>write</code>, and a row that loaded a skill says which one. When the reply is done you see the tokens it used and how long it took, and the file list reloads, since the agent may have changed files.</p>
+      <p>The reply appears as it is written. Each tool the agent uses shows as a row with the tool's name, such as <code>shell</code>, <code>read</code>, <code>edit</code> or <code>write</code>, and what it acted on: the command, the file, the web address or the skill it loaded. A row turns red when the call failed. The output of commands is not shown; the agent tells you what matters. When the reply is done you see the tokens it used and how long it took, and the file list reloads, since the agent may have changed files.</p>
       <p>When the reply added, changed or removed a skill, a <b>Learned</b> line names it. <a href="teaching.html">Teaching your agent</a> explains it.</p>
+
+      <h2 id="plans">Plans and subagents</h2>
+      <p>For a task with several steps the agent keeps a plan, shown as a checklist in its reply. Steps tick off as it works, and the step in progress has an arrow.</p>
+      <p>The agent can hand a self-contained part of a task, such as searching the code or reviewing a change, to a <b>subagent</b>: a helper with the same tools and workspace that starts without this conversation. Each subagent shows as a block with its task and the tools it runs, and a tick or a cross when it ends; select the task line to fold it. Up to two run at once, a subagent cannot start subagents of its own, and the agent continues once their answers are back. Subagents run on the same model and key, and their tokens are included in the reply's total.</p>
 
       <h2 id="stop-and-new">Stop, and start fresh</h2>
       <ul>
-        <li><b>Stop</b> stops watching the reply. The agent still finishes the work on the server, and the result shows in its files.</li>
+        <li><b>Stop</b> stops the reply and the command it is running. A command a subagent is running finishes first. What the agent already changed stays in its files.</li>
         <li><b>New chat</b> starts a fresh conversation. The agent keeps its skills, notes and files across chats; only the conversation starts over.</li>
       </ul>
       <p>Reloading the page keeps the same chat, so the agent still remembers it, but earlier messages are not shown again.</p>

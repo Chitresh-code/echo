@@ -19,4 +19,42 @@ describe('apply', () => {
     expect(m.learned).toEqual(['weekly-report'])
     expect(apply({ role: 'agent', parts: [] }, { event: 'done', data: { stopReason: 'end_turn', usage } }).learned).toBeUndefined()
   })
+
+  it('puts what a call acted on and whether it failed on its row', () => {
+    let m = apply({ role: 'agent', parts: [] }, { event: 'tool', data: { id: 't1', name: 'shell' } })
+    m = apply(m, { event: 'tool_detail', data: { id: 't1', detail: 'npm test' } })
+    m = apply(m, { event: 'tool_result', data: { id: 't1', ok: false } })
+    m = apply(m, { event: 'tool_result', data: { id: 'unknown', ok: true } })
+    expect(m.parts).toEqual([{ kind: 'tool', id: 't1', name: 'shell', detail: 'npm test', ok: false }])
+  })
+
+  it('turns a subagent call into a block that collects its work', () => {
+    let m = apply({ role: 'agent', parts: [] }, { event: 'tool', data: { id: 's1', name: 'subagent' } })
+    m = apply(m, { event: 'tool_result', data: { id: 's1', ok: true } }) // the "dispatched" acknowledgement
+    m = apply(m, { event: 'delegate', data: { id: 's1', task: 'Find TODOs' } })
+    m = apply(m, { event: 'delegate', data: { id: 's2', task: 'No row yet' } })
+    m = apply(m, { event: 'delegate_tool', data: { delegate: 's1', id: 'c1', name: 'shell', detail: 'grep TODO' } })
+    m = apply(m, { event: 'delegate_tool_result', data: { delegate: 's1', id: 'c1', ok: true } })
+    m = apply(m, { event: 'delegate_done', data: { id: 's1', ok: true } })
+    expect(m.parts).toEqual([
+      { kind: 'delegate', id: 's1', task: 'Find TODOs', ok: true, tools: [{ kind: 'tool', id: 'c1', name: 'shell', detail: 'grep TODO', ok: true }] },
+      { kind: 'delegate', id: 's2', task: 'No row yet', tools: [] },
+    ])
+  })
+
+  it('hides the rows the plan already shows', () => {
+    let m = apply({ role: 'agent', parts: [] }, { event: 'tool', data: { id: 't1', name: 'todo_write' } })
+    m = apply(m, { event: 'tool', data: { id: 't2', name: 'strands_manage_background_task' } })
+    expect(m.parts).toEqual([])
+  })
+
+  it('keeps one plan per message, updated where it first appeared', () => {
+    let m = apply({ role: 'agent', parts: [] }, { event: 'todos', data: { items: [{ text: 'Read', status: 'in_progress' }] } })
+    m = apply(m, { event: 'text', data: { text: 'Reading.' } })
+    m = apply(m, { event: 'todos', data: { items: [{ text: 'Read', status: 'completed' }] } })
+    expect(m.parts).toEqual([
+      { kind: 'plan', items: [{ text: 'Read', status: 'completed' }] },
+      { kind: 'text', text: 'Reading.' },
+    ])
+  })
 })

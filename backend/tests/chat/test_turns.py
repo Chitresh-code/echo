@@ -64,7 +64,8 @@ def run_turn(monkeypatch, fake_runner, model, prompt="say hi"):
 
 def test_turn_streams_text_tools_and_done(monkeypatch, fake_runner):
     events = run_turn(monkeypatch, fake_runner, shell_then_done())
-    assert [e for e, _ in events] == ["text", "tool", "text", "done"]
+    assert [e for e, _ in events] == ["text", "tool", "text", "tool_detail", "tool_result", "text", "text", "done"]
+    assert events[2][1]["text"] == "\n\n" and events[3][1]["detail"] == "echo hi" and events[4][1]["ok"] is True
     assert events[1][1]["name"] == "shell" and events[-1][1]["stopReason"] == "end_turn"
     assert set(events[-1][1]["usage"]) == {"inputTokens", "outputTokens", "cacheReadInputTokens", "cacheWriteInputTokens"}
     assert any(r["command"] == "echo hi" and r["workspace_id"] == WS for r in fake_runner.requests)
@@ -207,7 +208,7 @@ def test_busy_chat_is_409(client, user, fake_runner):
 
 
 def agent_maker(model):
-    return lambda: agent_factory.build_agent(get_settings(), WS, CHAT, model, "anthropic/claude-sonnet-5-5", model, "Test agent", "")
+    return lambda delegation: agent_factory.build_agent(get_settings(), WS, CHAT, model, "anthropic/claude-sonnet-5-5", model, "Test agent", "", delegation=delegation)
 
 
 async def wait_for(condition, seconds=5):
@@ -252,7 +253,7 @@ async def test_a_racing_second_turn_gets_an_error_event(fake_runner):
 
 
 async def test_failure_becomes_an_error_event_without_its_text(fake_runner):
-    def explode():
+    def explode(delegation):
         raise RuntimeError("provider said: key sk-secret-123 is invalid")
 
     events = [e async for e in turn_service.stream_turn("k4", explode, "go", 60)]
@@ -345,8 +346,49 @@ async def test_running_turns_are_counted_per_user_and_released(fake_runner):
 
 
 async def test_a_failed_turn_releases_its_slot(fake_runner):
-    def explode():
+    def explode(delegation):
         raise RuntimeError("boom")
 
     [e async for e in turn_service.stream_turn("k7", explode, "go", 60, user_id="u3", max_running=1)]
     await wait_for(lambda: turn_service.can_start("u3", 1))
+
+
+class ParentAndChild(ScriptedModel):
+    """Plays the parent's replies, or a subagent's when the call carries the harness's subagent
+    role prompt, since the subagent shares the parent's model."""
+
+    def __init__(self, parent: list, child: list):
+        super().__init__(parent)
+        self.child = ScriptedModel(child)
+        self.child_prompts: list[str] = []
+
+    async def stream(self, messages, tool_specs=None, system_prompt=None, **kwargs):
+        if "subagent handling a focused subtask" in (system_prompt or ""):
+            self.child_prompts.append(system_prompt)
+            async for event in self.child.stream(messages, tool_specs, system_prompt, **kwargs):
+                yield event
+            return
+        async for event in super().stream(messages, tool_specs, system_prompt, **kwargs):
+            yield event
+
+
+def test_a_subagents_work_is_streamed(monkeypatch, fake_runner):
+    plan = {"todos": [{"content": "Look", "activeForm": "Looking", "status": "in_progress"}]}
+    model = ParentAndChild(
+        [[("tool", "todo_write", plan), ("tool", "subagent", {"task": "Count the files"})], [("text", "Done.")]],
+        [[("tool", "shell", {"command": "ls | wc -l"})], [("text", "3 files")]],
+    )
+    events = run_turn(monkeypatch, fake_runner, model)
+    names = [e for e, _ in events]
+    by_name = {e: d for e, d in events}
+    sub_id = next(d["id"] for e, d in events if e == "tool" and d["name"] == "subagent")
+    assert by_name["todos"] == {"items": [{"text": "Looking", "status": "in_progress"}]}
+    assert ("tool_detail", {"id": sub_id, "detail": "Count the files"}) in events
+    assert by_name["delegate"] == {"id": sub_id, "task": "Count the files"}
+    assert by_name["delegate_tool"]["delegate"] == sub_id and by_name["delegate_tool"]["detail"] == "ls | wc -l"
+    assert by_name["delegate_tool_result"]["ok"] is True
+    assert by_name["delegate_done"] == {"id": sub_id, "ok": True}
+    assert names.index("delegate") < names.index("delegate_done") < names.index("done") == len(names) - 1
+    # The subagent ran in the agent's own workspace, with Echo's rules added to its role prompt.
+    assert any(r["command"] == "ls | wc -l" and r["workspace_id"] == WS for r in fake_runner.requests)
+    assert model.child_prompts and all("# Untrusted content" in p and f"/data/workspaces/{WS}" in p for p in model.child_prompts)

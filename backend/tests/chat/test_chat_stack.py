@@ -23,7 +23,9 @@ def test_turn_edits_and_commits_in_the_jail(client, user, monkeypatch):
 
     events = parse(client.post(f"/api/agents/{ws}/chats/{chat}/turns", json=turn("go", add_key(client, user))).text)
 
-    assert [e for e, _ in events] == ["tool", "tool", "text", "done"]
+    assert [e for e, _ in events if not e.startswith("tool_")] == ["tool", "tool", "text", "text", "done"]
+    # Both calls ran in the jail and succeeded.
+    assert [d["ok"] for e, d in events if e == "tool_result"] == [True, True]
     assert client.get(f"/api/agents/{ws}/file?path=hello.txt").json()["data"]["content"] == "hello\n"
     assert client.get(f"/api/agents/{ws}/git/status").json()["data"] == []
     # The environment plugin read AGENTS.md through the jail and gave it to the model.

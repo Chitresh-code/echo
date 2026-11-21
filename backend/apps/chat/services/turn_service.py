@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from strands import Agent
 
 from apps.agents.services.knowledge_service import changed_skills
+from apps.chat.services.delegation import Delegation
 from apps.chat.services.sse import done_data, message, to_sse
 from core.request_id import current
 
@@ -60,19 +61,22 @@ async def _hashes(snapshot: Snapshot | None) -> dict[str, str] | None:
 
 
 async def _run(
-    make_agent: Callable[[], Agent], prompt: str, timeout: int, cancel: threading.Event, queue: asyncio.Queue, snapshot: Snapshot | None
+    make_agent: Callable[[Delegation], Agent], prompt: str, timeout: int, cancel: threading.Event, queue: asyncio.Queue, snapshot: Snapshot | None
 ) -> None:
     seen_tools: set[str] = set()
+    loop = asyncio.get_running_loop()
+    # Subagents can report from the harness's background thread.
+    delegation = Delegation(lambda sse: loop.call_soon_threadsafe(queue.put_nowait, sse))
     try:
         async with asyncio.timeout(timeout):
             before = await _hashes(snapshot)
             done = None
             # Leaving the block shuts the agent down, which saves pending memory.
-            async with make_agent() as agent:
+            async with make_agent(delegation) as agent:
                 async for event in agent.stream_async(prompt, cancel_signal=cancel):
                     if "result" in event:
                         # Held until the skills are compared, so done stays the last event.
-                        done = done_data(event["result"])
+                        done = done_data(event["result"], delegation.total_usage())
                     elif sse := to_sse(event, seen_tools):
                         await queue.put(sse)
                 # Inside the block, so done is not held back while the agent saves its memory.
@@ -94,7 +98,7 @@ async def _run(
 
 async def stream_turn(
     chat_key: str,
-    make_agent: Callable[[], Agent],
+    make_agent: Callable[[Delegation], Agent],
     prompt: str,
     timeout: int,
     snapshot: Snapshot | None = None,

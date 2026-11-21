@@ -1,9 +1,21 @@
 import { unwrap } from './client'
 import type { Usage } from './types'
 
+export type PlanItem = { text: string; status: 'pending' | 'in_progress' | 'completed' }
+
 export type TurnEvent =
   | { event: 'text'; data: { text: string } }
   | { event: 'tool'; data: { id: string; name: string } }
+  // What a call acted on (its command, path, URL or task), once its input is complete.
+  | { event: 'tool_detail'; data: { id: string; detail: string } }
+  | { event: 'tool_result'; data: { id: string; ok: boolean } }
+  // The agent's plan, the whole list each time it changes.
+  | { event: 'todos'; data: { items: PlanItem[] } }
+  // A subagent started for the subagent call `id`; its tools and end refer back to that id.
+  | { event: 'delegate'; data: { id: string; task: string } }
+  | { event: 'delegate_tool'; data: { delegate: string; id: string; name: string; detail: string } }
+  | { event: 'delegate_tool_result'; data: { delegate: string; id: string; ok: boolean } }
+  | { event: 'delegate_done'; data: { id: string; ok: boolean } }
   // The skill a finished skills tool call loaded, sent after that call's tool row.
   | { event: 'skill'; data: { id: string; name: string } }
   // learned: skill folders the turn changed; missing when they could not be compared.

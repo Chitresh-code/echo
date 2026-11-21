@@ -8,6 +8,21 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
+## 0.9.0 (2026-11-22)
+
+Delegated work in chat.
+
+### Added
+- The agent can hand a self-contained part of a task to a subagent, with the same tools and workspace. Each one shows in the chat as a block with its task, its tool calls and whether it finished. Up to two run at once per reply, a subagent cannot start its own, and their tokens count in the reply's total.
+- For multi-step tasks the agent keeps a plan, shown as a checklist that updates as it works.
+- Tool rows show what each call acted on (the command, file, address or skill) and are marked when the call failed. The turn stream has new `tool_detail`, `tool_result`, `todos` and `delegate*` events.
+
+### Changed
+- The agent can no longer run a tool other than `subagent` in the background, where its result would be replaced by a "dispatched" note.
+
+### Fixed
+- The guide and the chat said Stop only stops watching a reply. It stops the reply and its running command.
+
 ## 0.8.0 (2026-11-22)
 
 Quotas, so one user cannot take over the sandbox host.

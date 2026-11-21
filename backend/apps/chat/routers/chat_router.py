@@ -58,8 +58,8 @@ async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user:
     await session.commit()
     stream = turn_service.stream_turn(
         chat_key,
-        lambda: agent_factory.build_agent(
-            settings, agent_id, chat_id, model, f"{credential.provider}/{body.model}", side_model, agent.name, agent.job, needs_fixing
+        lambda delegation: agent_factory.build_agent(
+            settings, agent_id, chat_id, model, f"{credential.provider}/{body.model}", side_model, agent.name, agent.job, needs_fixing, delegation=delegation
         ),
         body.prompt,
         settings.turn_timeout,

@@ -120,8 +120,14 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
       <dl class="codes">
         <dt><code>text</code></dt><dd>A piece of the agent's reply.</dd>
         <dt><code>tool</code></dt><dd>The agent started using a tool, such as <code>shell</code>, <code>read</code>, <code>write</code> or <code>edit</code>.</dd>
+        <dt><code>tool_detail</code></dt><dd><code>{id, detail}</code>: what a tool call acted on (its command, path, address, task or skill), at most 200 characters, once its input is complete.</dd>
+        <dt><code>tool_result</code></dt><dd><code>{id, ok}</code>: whether a tool call succeeded. Its output is not sent. For <code>subagent</code> this is only the acknowledgement that it started; <code>delegate_done</code> says how it ended.</dd>
         <dt><code>skill</code></dt><dd><code>{id, name}</code>: the skill a <code>skills</code> tool call loaded. It follows that tool's event.</dd>
-        <dt><code>done</code></dt><dd>The turn is over. <code>usage</code> holds the tokens it used on your model (<code>inputTokens</code>, <code>outputTokens</code>, <code>cacheReadInputTokens</code>, <code>cacheWriteInputTokens</code>), not counting summaries made by the provider's small model. <code>learned</code> lists the skills the turn added, changed or removed.</dd>
+        <dt><code>todos</code></dt><dd><code>{items}</code>: the agent's whole plan each time it changes, at most 30 items of <code>{text, status}</code>, where <code>status</code> is <code>pending</code>, <code>in_progress</code> or <code>completed</code>.</dd>
+        <dt><code>delegate</code></dt><dd><code>{id, task}</code>: a subagent started for the <code>subagent</code> tool call <code>id</code>.</dd>
+        <dt><code>delegate_tool</code>, <code>delegate_tool_result</code></dt><dd><code>{delegate, id, name, detail}</code> and <code>{delegate, id, ok}</code>: a subagent's tool calls, with <code>delegate</code> naming its <code>subagent</code> call.</dd>
+        <dt><code>delegate_done</code></dt><dd><code>{id, ok}</code>: the subagent for that call ended, and whether it finished.</dd>
+        <dt><code>done</code></dt><dd>The turn is over. <code>usage</code> holds the tokens it used on your model, subagents included (<code>inputTokens</code>, <code>outputTokens</code>, <code>cacheReadInputTokens</code>, <code>cacheWriteInputTokens</code>), not counting summaries made by the provider's small model. <code>learned</code> lists the skills the turn added, changed or removed.</dd>
         <dt><code>error</code></dt><dd>The turn stopped early. It has a <code>code</code> and, when the server failed, a <code>request_id</code>.</dd>
       </dl>
       <ul>

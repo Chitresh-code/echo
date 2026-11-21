@@ -2,6 +2,7 @@ import builtins
 import os
 
 from apps.chat.services import agent_factory
+from apps.chat.services.delegation import Delegation
 from apps.credentials.services import providers
 from core.config import get_settings
 from sandbox.runner_sandbox import RunnerSandbox
@@ -16,7 +17,10 @@ def test_build_agent(monkeypatch):
     settings = get_settings()
 
     side = providers.build_side_model("anthropic", "test-key", None, None)
-    agent = agent_factory.build_agent(settings, WS, CHAT, providers.build_model("anthropic", "test-key", None, "claude-sonnet-5-5"), "anthropic/claude-sonnet-5-5", side, "Payouts", "Reconcile weekly payouts")
+    delegation = Delegation(lambda sse: None)
+    agent = agent_factory.build_agent(
+        settings, WS, CHAT, providers.build_model("anthropic", "test-key", None, "claude-sonnet-5-5"), "anthropic/claude-sonnet-5-5", side, "Payouts", "Reconcile weekly payouts", delegation=delegation
+    )
 
     kw = calls[0]
     assert isinstance(agent.sandbox, RunnerSandbox) and agent.sandbox.workspace_id == WS
@@ -24,11 +28,17 @@ def test_build_agent(monkeypatch):
     assert kw["memory"] == {"dir": str(settings.data_dir / "memory" / WS)}
     assert kw["skills"] == [f"/data/workspaces/{WS}/.agent/skills"]
     assert kw["builtin_tools"]["web_fetch"] == {"transport": "curl", "model": side}
-    # No subagent, which would run a hidden agent loop on the user's key, and no
-    # programmatic_tool_caller, which would run model-written Python in the api process.
+    # No programmatic_tool_caller, which would run model-written Python in the api process.
     assert sorted(agent.tool_names) == sorted([
         "shell", "read", "write", "edit", "web_fetch", "skills", "search_memory", "retrieve_context", "strands_manage_background_task",
+        "subagent", "todo_write",
     ])
+    # Subagents cannot delegate again, at most two run at once, and no other tool goes to the background.
+    assert kw["builtin_tools"]["subagent"] == {"max_depth": 1}
+    assert kw["background_tasks"] == {"agentic": [], "max_concurrency": 2, "timeout": settings.turn_timeout}
+    assert kw["hooks"] == [delegation] and delegation.parent is agent
+    assert "# Untrusted content" in delegation.rules and f"/data/workspaces/{WS}" in delegation.rules
+    assert "# Delegating and planning" in agent.system_prompt and "# Delegating" not in delegation.rules
     shell = agent.tool_registry.registry["shell"].tool_spec
     assert shell["inputSchema"]["json"]["properties"]["timeout"]["default"] == settings.command_timeout
     assert f"at most {settings.command_timeout_max}" in shell["description"]
