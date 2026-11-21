@@ -1,0 +1,7 @@
+# Only the api image is built from the repo root; the runner has its own context.
+.git
+.env
+runner
+**/.venv
+**/__pycache__
+**/.pytest_cache

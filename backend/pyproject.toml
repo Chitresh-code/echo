@@ -1,0 +1,16 @@
+[project]
+name = "echo"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[standard]>=0.165.0",
+    "httpx>=0.28",
+    "strands-agents[anthropic,gemini,litellm,openai]>=1.65.0",
+    "strands-harness>=0.4.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+]

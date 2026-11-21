@@ -1,0 +1,73 @@
+name: echo
+
+services:
+  # Runs every jail. Privileged because nsjail creates namespaces and mounts, and the jail
+  # firewall needs iptables. It holds no secrets and no agent state.
+  sandbox:
+    build:
+      context: ./runner
+      target: app
+    privileged: true
+    volumes:
+      - sandbox-data:/data
+      - runner-socket:/run/echo
+    # Its own network: the two containers share only the socket volume, so even a process that
+    # escaped a jail to root in this container has no network path to the api.
+    networks: [sandbox-net]
+
+  # Holds the provider keys and runs the agent. Unprivileged, and it reaches workspaces only
+  # through the runner's socket. Bound to localhost because there is no auth yet.
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: app
+    # shortcut: the api has no auth, so it is bound to this machine only; never publish it on another address until accounts land.
+    ports:
+      - "127.0.0.1:${ECHO_PORT:-8000}:8000"
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - api-data:/data
+      - runner-socket:/run/echo
+    networks: [api-net]
+    depends_on:
+      sandbox:
+        condition: service_healthy
+
+  api-test:
+    profiles: [test]
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    environment:
+      ECHO_MODELS: anthropic/claude-sonnet-5-5
+    networks: [api-net]
+    volumes:
+      - runner-socket:/run/echo
+    # Stack tests talk to the real runner, so the sandbox must be up first.
+    depends_on:
+      sandbox:
+        condition: service_healthy
+    command: ["pytest", "-p", "no:cacheprovider", "-m", "stack or not stack"]
+
+  # Jail tests: real jails, behind the same firewall entrypoint as the sandbox.
+  sandbox-test:
+    profiles: [test]
+    build:
+      context: ./runner
+      target: test
+    privileged: true
+    networks: [sandbox-net]
+    command: ["pytest", "-p", "no:cacheprovider", "-m", "jail or not jail"]
+
+volumes:
+  sandbox-data:
+  api-data:
+  runner-socket:
+
+networks:
+  sandbox-net:
+  api-net:

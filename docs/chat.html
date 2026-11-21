@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat - Echo docs</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <nav>
+      <a class="brand" href="./">Echo</a>
+      <a href="./">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="workspaces.html">Workspaces</a>
+      <a href="chat.html">Chat</a>
+      <a href="/api/docs">API reference</a>
+    </nav>
+  </header>
+  <main>
+    <h1>Chat with the agent</h1>
+    <p>You give the agent a task in a chat, and it does the work in the workspace: it reads and edits files, runs commands, installs packages and commits with git. Everything it runs happens inside the workspace's jail, which can reach the internet but not your machine or your network. Your model keys stay with the Echo server and never reach the jail.</p>
+    <p>There is no chat window in the browser yet, so you chat through the API with <code>curl</code>. The examples assume Echo is on port 8000 and you have a workspace id from the <a href="workspaces.html">Workspaces</a> page.</p>
+
+    <h2>Start a chat</h2>
+    <pre><code>curl -X POST http://127.0.0.1:8000/api/workspaces/{id}/chats</code></pre>
+    <p>The answer holds the chat's id. A workspace can have many chats. Each one keeps its own conversation, so a later message in the same chat can refer to earlier ones.</p>
+
+    <h2>Send a message</h2>
+    <pre><code>curl -N -X POST http://127.0.0.1:8000/api/workspaces/{id}/chats/{chat}/turns \
+  -H 'content-type: application/json' \
+  -d '{"prompt": "Create a small Vite site that says hello, build it and commit it"}'</code></pre>
+    <p>The agent's reply streams back as it works, as server-sent events:</p>
+    <ul>
+      <li><code>text</code>: a piece of the agent's reply.</li>
+      <li><code>tool</code>: the agent started using a tool, such as <code>shell</code>, <code>read</code>, <code>write</code> or <code>edit</code>.</li>
+      <li><code>done</code>: the turn is over.</li>
+      <li><code>error</code>: the turn stopped early. It has a <code>code</code> and, when the server failed, a <code>request_id</code> to quote when you report it.</li>
+    </ul>
+    <p>Add <code>"model"</code> to the body to pick one of the models from <code>GET /api/models</code>. Without it, the turn uses the default, the first one in <code>ECHO_MODELS</code>.</p>
+    <p>Afterwards, look at what changed with the file and git endpoints on the <a href="workspaces.html">Workspaces</a> page.</p>
+
+    <h2>What the agent knows about your project</h2>
+    <p>Put an <code>AGENTS.md</code> file at the root of the workspace with your conventions, such as how to run the tests or which style to follow. The agent reads it at the start of every turn and keeps it up to date. Workflows it learns and scripts it writes for itself go in <code>.agent/skills/</code> in the workspace, so it can use them again in later chats. It also keeps short notes about the workspace across chats.</p>
+
+    <h2>Limits</h2>
+    <ul>
+      <li>One message at a time per chat. Sending another while the agent is still working gets the <code>chat_busy</code> error. Wait for <code>done</code>, or start a second chat.</li>
+      <li>A turn stops after 30 minutes (<code>ECHO_TURN_TIMEOUT</code>). Each command the agent runs stops after 2 minutes unless the agent asks for longer, up to 30 minutes.</li>
+      <li>Stopping <code>curl</code> stops the turn and the command that was running.</li>
+      <li>The agent cannot open a server it starts, such as a dev server, because the jail cannot reach localhost. It can build and test, and anything that runs to completion works.</li>
+    </ul>
+  </main>
+</body>
+</html>
