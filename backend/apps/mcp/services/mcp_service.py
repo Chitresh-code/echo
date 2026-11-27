@@ -111,7 +111,7 @@ async def add(settings: Settings, db: AsyncSession, owner_id: str, new: NewMcpSe
 
 
 def _refused() -> AppError:
-    return AppError(400, "endpoint_not_allowed", "The server's address is local or private, and Echo only connects to public addresses.")
+    return AppError(400, "endpoint_not_allowed", "The server, or an address it sent Echo to for signing in, is not https on the public internet. Echo connects only to those.")
 
 
 def _unreachable() -> AppError:
@@ -165,6 +165,11 @@ async def start_oauth(settings: Settings, db: AsyncSession, owner_id: str, serve
     try:
         return await oauth.start(owner_id, server_id, provider, lambda _: connect.list_on_loop(server))
     except Exception as exc:
+        # Without metadata the SDK guesses /register, /authorize and /token on the server's own
+        # host, which Echo will not use, so say what is actually missing.
+        if provider.context.oauth_metadata is None and not isinstance(exc, AppError) and not safe_http.refused(exc):
+            logger.warning("MCP server %s offers OAuth without metadata", row["name"], exc_info=exc)
+            raise AppError(400, "oauth_no_metadata", "The server does not publish its sign-in details (OAuth metadata), so Echo cannot connect it with OAuth. If the provider gives you an API token, add the server with headers instead.") from None
         raise _oauth_error(row["name"], exc) from None
 
 

@@ -26,6 +26,8 @@ export const leave = { to: (url: string) => window.location.assign(url) }
 const CONNECT_ERRORS: Record<string, string> = {
   oauth_denied: 'The sign-in was declined or cancelled at the provider. Connect again to retry.',
   oauth_state_invalid: 'This sign-in link expired or was already used. Connect again.',
+  endpoint_not_allowed: "The server's sign-in sent Echo to an address that is not https on the public internet, so Echo stopped. Ask its provider to fix it, or use headers instead.",
+  oauth_unsupported: "The server's sign-in lacks protections Echo requires (PKCE with S256 over https), so Echo will not use it.",
   oauth_not_needed: 'The server answered without asking to sign in. Delete it and add it again with sign-in set to none or headers.',
 }
 const CONNECT_FAILED = 'The server could not be connected. Connect again; if it keeps failing, check that the address is right and the server is up.'

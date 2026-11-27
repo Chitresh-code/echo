@@ -158,8 +158,10 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
       <dl class="codes">
         <dt><code>mcp_server_limit_reached</code></dt><dd>You have 20 servers. Delete one first.</dd>
         <dt><code>mcp_server_name_taken</code></dt><dd>You already have a server with that name.</dd>
-        <dt><code>endpoint_not_allowed</code></dt><dd>The address is not <code>https</code> or is not on the public internet.</dd>
+        <dt><code>endpoint_not_allowed</code></dt><dd>The address, or one the server sent Echo to (its sign-in metadata, registration or token address), is not <code>https</code> or is not on the public internet.</dd>
         <dt><code>mcp_auth_failed</code></dt><dd>The server refused the headers.</dd>
+        <dt><code>oauth_no_metadata</code></dt><dd>From <code>/oauth</code>: the server publishes no OAuth metadata, so Echo has no sign-in or token address to use. Add it with headers instead.</dd>
+        <dt><code>oauth_unsupported</code></dt><dd>From <code>/oauth</code>: the provider's sign-in does not offer PKCE with S256, or its sign-in address is not https.</dd>
         <dt><code>mcp_server_error</code></dt><dd>The server could not be reached or did not answer as an MCP server. The details are in Echo's log.</dd>
       </dl>
 

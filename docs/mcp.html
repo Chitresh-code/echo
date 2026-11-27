@@ -57,7 +57,7 @@
       <ul>
         <li><b>None</b> for public servers.</li>
         <li><b>Headers</b> for a server that takes a fixed token, usually an <code>Authorization</code> header with the value <code>Bearer</code> and your token.</li>
-        <li><b>OAuth</b> for a server that signs you in at its provider. If the provider gave you a client id of your own, tick <b>I have a client id from the provider</b> and enter it, with its secret if it has one; otherwise Echo registers itself.</li>
+        <li><b>OAuth</b> for a server that signs you in at its provider. If the provider gave you a client id of your own, tick <b>I have a client id from the provider</b> and enter it, with its secret if it has one; otherwise Echo registers itself. Echo finds the provider's sign-in and token addresses in the details the server publishes (its OAuth metadata), and uses them only when they are https on the public internet. A server that publishes none cannot use OAuth; if its provider gives you an API token, choose <b>Headers</b> instead.</li>
       </ul>
       <p>Echo connects to a server with no sign-in or with headers straight away and lists its tools, so a wrong URL or token is refused at once with what went wrong. An OAuth server is saved and waits for you to connect it.</p>
       <p>For a local server, give the command and its arguments, one per line, and any environment variables it needs. The form shows the exact command line that will run.</p>

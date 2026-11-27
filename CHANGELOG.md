@@ -8,6 +8,12 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
+## 0.15.1 (2026-11-27)
+
+### Fixed
+- MCP connections now refuse any request that is not https, including the OAuth metadata, registration and token addresses a server names and every redirect hop. Before, a server could name a plain http token endpoint and Echo would send the authorization code, code verifier and client secret over it. A sign-in stopped this way comes back to Connectors saying why.
+- Connecting OAuth to a server that publishes no OAuth metadata now says so (`oauth_no_metadata`) and suggests headers, instead of reporting that the sign-in failed.
+
 ## 0.15.0 (2026-11-27)
 
 ### Added

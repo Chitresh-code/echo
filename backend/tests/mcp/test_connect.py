@@ -86,8 +86,13 @@ class ToLocal(httpx2.AsyncBaseTransport):
         self.port, self.inner = port, httpx2.AsyncHTTPTransport()
 
     async def handle_async_request(self, request):
-        request.url = request.url.copy_with(scheme="http", host="127.0.0.1", port=self.port)
-        return await self.inner.handle_async_request(request)
+        # Put the address back afterwards: an auth flow sends the same request again, and the
+        # guarded client's https check must see the address the SDK chose, not this one.
+        url, request.url = request.url, request.url.copy_with(scheme="http", host="127.0.0.1", port=self.port)
+        try:
+            return await self.inner.handle_async_request(request)
+        finally:
+            request.url = url
 
 
 @pytest.fixture

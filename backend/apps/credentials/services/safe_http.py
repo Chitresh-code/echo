@@ -87,13 +87,24 @@ def client() -> httpx.AsyncClient:
 TIMEOUT2 = httpx2.Timeout(30.0, read=300.0)
 
 
+async def _https_only(request) -> None:
+    # Addresses a server names (metadata, registration and token endpoints) are never checked
+    # like a base URL, and plain http would send codes, verifiers and secrets readable on the way.
+    if request.url.scheme != "https":
+        raise EndpointNotAllowed(str(request.url.host))
+
+
 def client2(headers: dict[str, str] | None = None, auth=None) -> httpx2.AsyncClient:
     """The same guard on httpx2, for the MCP SDK. A new client per connection, since each MCP
     client runs on its own thread and loop. `auth` is an httpx2 auth flow, such as OAuth."""
     transport = httpx2.AsyncHTTPTransport()
     # As in client(): tests/credentials/test_safe_http.py connects through it, so a move fails there.
     transport._pool._network_backend = _CheckedBackend2()
-    return httpx2.AsyncClient(transport=transport, trust_env=False, follow_redirects=False, timeout=TIMEOUT2, headers=headers, auth=auth)
+    # The request hook runs for every request, including the ones an auth flow sends itself.
+    return httpx2.AsyncClient(
+        transport=transport, trust_env=False, follow_redirects=False, timeout=TIMEOUT2, headers=headers, auth=auth,
+        event_hooks={"request": [_https_only]},
+    )
 
 
 def check_base_url(url: str | None) -> str:

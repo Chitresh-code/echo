@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
 
+from apps.credentials.services import safe_http
 from apps.mcp.services import connect, mcp_service, oauth
 from core.config import get_settings
 from core.db import create_engine, db_path
@@ -52,9 +53,9 @@ async def as_app(scope, receive, send):
     path = scope["path"]
     if path.startswith("/.well-known/oauth-protected-resource"):
         response = JSONResponse({"resource": MCP_URL, "authorization_servers": [AS], "scopes_supported": ["read"]})
-    elif path == "/.well-known/oauth-authorization-server":
+    elif path == "/.well-known/oauth-authorization-server" and fake.get("as_meta", True):
         response = JSONResponse({
-            "issuer": AS, "authorization_endpoint": fake["authorize"], "token_endpoint": f"{AS}/token",
+            "issuer": AS, "authorization_endpoint": fake["authorize"], "token_endpoint": fake.get("token", f"{AS}/token"),
             "registration_endpoint": f"{AS}/register", "response_types_supported": ["code"],
             "code_challenge_methods_supported": ["S256"] if fake["s256"] else ["plain"],
             "client_id_metadata_document_supported": fake["cimd"],
@@ -140,7 +141,9 @@ def port():
 
 @pytest.fixture
 def local(monkeypatch, port):
-    monkeypatch.setattr(connect, "_http", lambda headers, auth=None: httpx2.AsyncClient(headers=headers, auth=auth, transport=Both(port)))
+    # With the guarded client's https check, so a plain http address a server names is refused here too.
+    monkeypatch.setattr(connect, "_http", lambda headers, auth=None: httpx2.AsyncClient(
+        headers=headers, auth=auth, transport=Both(port), event_hooks={"request": [safe_http._https_only]}))
     reset()
     oauth._flows.clear()
 
@@ -231,6 +234,22 @@ def test_an_authorization_server_without_its_protections_is_refused(client, user
     server = add(client)
     response = client.post(f"/api/mcp-servers/{server['id']}/oauth")
     assert (response.status_code, response.json()["error"]["code"]) == (400, "oauth_unsupported")
+
+
+def test_a_plain_http_token_endpoint_gets_no_code(client, user, local):
+    fake.update(token="http://auth.test/token")
+    server = add(client)
+    _, query = authorize(client, server["id"])
+    assert callback(client, code="good", state=query["state"], iss=AS) == "/mcp?error=endpoint_not_allowed"
+    assert fake["token_requests"] == [] and stored(server["id"])[1] == "needs_auth"
+
+
+def test_a_server_without_oauth_metadata_says_so(client, user, local):
+    fake.update(as_meta=False)
+    server = add(client)
+    response = client.post(f"/api/mcp-servers/{server['id']}/oauth")
+    assert (response.status_code, response.json()["error"]["code"]) == (400, "oauth_no_metadata")
+    assert fake["authorized"] == [] and fake["token_requests"] == []
 
 
 def test_a_bad_callback_is_refused(client, user, local):

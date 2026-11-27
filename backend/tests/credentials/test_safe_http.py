@@ -69,6 +69,30 @@ def test_no_proxies_and_no_redirects(make):
     assert client.follow_redirects is False and client._trust_env is False
 
 
+async def test_client2_refuses_plain_http_before_connecting(dns):
+    # Covers what an MCP server names for itself, such as an http token endpoint in its metadata.
+    dns.answer, dns.connected = ["93.184.216.34"], []
+    async with safe_http.client2() as client:
+        with pytest.raises(safe_http.EndpointNotAllowed):
+            await client.post("http://auth.example/token", data={"code": "c"})
+    assert dns.connected == []
+
+
+async def test_client2_checks_the_requests_an_auth_flow_sends(dns):
+    import httpx2
+
+    class TokenFirst(httpx2.Auth):
+        def auth_flow(self, request):
+            yield httpx2.Request("POST", "http://auth.example/token")
+            yield request
+
+    dns.answer, dns.connected = ["93.184.216.34"], []
+    async with safe_http.client2(auth=TokenFirst()) as client:
+        with pytest.raises(safe_http.EndpointNotAllowed):
+            await client.get("https://mcp.example/mcp")
+    assert dns.connected == []
+
+
 def test_client2_carries_the_headers_and_auth_it_is_given():
     import httpx2
     auth = httpx2.BasicAuth("u", "p")
