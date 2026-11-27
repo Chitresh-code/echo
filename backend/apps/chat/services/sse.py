@@ -2,6 +2,10 @@
 with recorded events. Only what the UI shows is sent; agent internals never leave the server."""
 
 import json
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from apps.usage.services.meter import Meter
 
 
 def message(event: str, data: dict) -> str:
@@ -81,10 +85,11 @@ def todo_items(tool_input) -> list[dict] | None:
     return items
 
 
-def done_data(result, extra_usage: dict[str, int] | None = None) -> dict:
-    usage = usage_of(result)
-    for key in USAGE_KEYS:
-        usage[key] += (extra_usage or {}).get(key, 0)
+def done_data(result, meter: "Meter | None" = None) -> dict:
+    """How the turn ended and what it used. With a meter, the usage covers every model call the
+    turn made (subagents, page summaries, memory extraction) with its estimated cost; without one,
+    only the agent's own model's tokens, from the result."""
+    usage = meter.summary() if meter is not None else usage_of(result)
     return {"stopReason": result.stop_reason, "usage": usage}
 
 
@@ -92,9 +97,6 @@ USAGE_KEYS = ("inputTokens", "outputTokens", "cacheReadInputTokens", "cacheWrite
 
 
 def usage_of(result) -> dict[str, int]:
-    """The turn's tokens on the chosen model, so users see what it cost them. Page summaries and
-    memory extraction run on a separate small model and are not counted here; subagents' tokens
-    are added by the caller."""
     usage = result.metrics.accumulated_usage
     return {key: usage.get(key, 0) for key in USAGE_KEYS}
 

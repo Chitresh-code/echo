@@ -11,6 +11,7 @@ from apps.chat.services import agent_factory, approvals, chat_service, turn_serv
 from apps.chat.services.sse import message
 from apps.credentials.models.credential import Deleted
 from apps.credentials.services import credential_service, providers
+from apps.usage.services.meter import Meter
 from apps.agents.repositories import agents
 from apps.agents.routers.agent_router import CurrentUser, Db, OwnedAgent
 from apps.agents.services import knowledge_service
@@ -129,8 +130,10 @@ async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user:
     # plain key lives only on this model's client, in this process; it never reaches the sandbox.
     credential, key = await credential_service.with_key(settings, session, user.id, body.credential_id)
     # shortcut: the model id goes to the provider unchecked, so a wrong one fails as turn_failed after the stream starts; the UI's picker will offer only listed models.
-    model = providers.build_model(credential.provider, key, credential.base_url, body.model, body.effort)
-    side_model = providers.build_side_model(credential.provider, key, credential.base_url, model)
+    # Every call on either model is counted and priced for the usage ledger, whoever makes it.
+    meter = Meter(credential.provider)
+    model = meter.watch(providers.build_model(credential.provider, key, credential.base_url, body.model, body.effort))
+    side_model = meter.watch(providers.build_side_model(credential.provider, key, credential.base_url, model))
     # Read per turn, so a rename, a new job or a broken skill reaches the very next message.
     agent = await agents.get(session, agent_id, user.id)
     needs_fixing = [s for s in (await knowledge_service.list_skills(settings, agent_id)).skills if s.status != "ok"]
@@ -152,7 +155,7 @@ async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user:
             chat_id,
             lambda delegation, gate, mcp: agent_factory.build_agent(
                 settings, agent_id, chat_id, model, f"{credential.provider}/{body.model}", side_model, agent.name, agent.job, needs_fixing,
-                delegation=delegation, approvals=gate, mcp=mcp,
+                delegation=delegation, approvals=gate, mcp=mcp, user_id=user.id,
             ),
             body.prompt,
             settings.turn_timeout,
@@ -165,6 +168,8 @@ async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user:
             side_tasks=side_tasks,
             approval_mode=agent.approval_mode,
             mcp=connect.TurnMcp(servers, user.id, agent_id) if servers else None,
+            meter=meter,
+            credential_id=credential.id,
         )
     except turn_service.TurnRefused as refused:
         # Another request claimed the chat or the last slot while this one awaited the database.

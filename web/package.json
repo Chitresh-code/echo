@@ -1,6 +1,6 @@
 {
   "name": "echo-web",
-  "version": "0.15.1",
+  "version": "0.16.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -17,6 +17,7 @@
     "@monaco-editor/react": "4.7.0",
     "@mui/icons-material": "9.5.0",
     "@mui/material": "9.5.0",
+    "@mui/x-charts": "9.17.0",
     "@tiptap/extensions": "3.34.0",
     "@tiptap/markdown": "3.34.0",
     "@tiptap/pm": "3.34.0",

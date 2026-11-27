@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { apply } from './Chat'
+import { apply, fromTurns } from './Chat'
 
 const usage = { inputTokens: 1, outputTokens: 2, cacheReadInputTokens: 0, cacheWriteInputTokens: 0 }
 
@@ -79,5 +79,19 @@ describe('mcp_unavailable', () => {
       { kind: 'unavailable', server: 'notes', reason: 'it exited while starting', detail: 'no module named x' },
       { kind: 'unavailable', server: 'old', reason: 'it needs connecting in Connectors', detail: '' },
     ])
+  })
+})
+
+describe('fromTurns', () => {
+  const turn = (usage: unknown, events: { event: string; data: unknown }[]) =>
+    ({ id: 't', prompt: 'p', model: null, effort: null, status: 'done', usage, truncated: false, started_at: '2026-11-27T10:00:00Z', ended_at: '2026-11-27T10:00:05Z', events }) as never
+  const base = { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 0, cacheWriteInputTokens: 0 }
+
+  it('prefers the stored final usage, which counts work after the reply', () => {
+    const done = { event: 'done', data: { stopReason: 'end_turn', usage: { ...base, costMicros: 100 } } }
+    const [, reply] = fromTurns([turn({ ...base, inputTokens: 30, costMicros: 300 }, [done])])
+    expect(reply.role === 'agent' && reply.usage?.costMicros).toBe(300)
+    const [, older] = fromTurns([turn(null, [done])])
+    expect(older.role === 'agent' && older.usage?.costMicros).toBe(100)
   })
 })

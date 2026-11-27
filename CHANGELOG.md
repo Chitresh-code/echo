@@ -8,6 +8,23 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
+## 0.16.0 (2026-11-27)
+
+### Added
+- Usage and cost. Every model call a turn makes is counted and priced as it happens: the turn's model, its subagents, and the side model's page summaries, memory extraction and workspace naming. Prices come from a copy of LiteLLM's public price list shipped with Echo (`backend/apps/usage/prices.json`, refreshed with `scripts/update_prices.py`), with cache and long prompt rates. Models it does not list, including every OpenAI-compatible endpoint, are counted without a price.
+- Each turn's usage is kept in a new `usage` table, one row per model, with its workspace, chat, key, tokens, calls and estimated cost. Rows stay when the workspace or key is deleted and go with the user.
+- `GET /api/usage?start&end&tz` reports your usage over whole days in your time zone (up to 366): totals, a cost per day, and splits by workspace, model and key, with deleted ones named `null`. Money is in integer millionths of a dollar (`cost_micros`).
+- Usage, a new page in the sidebar at `/usage`, shows the estimated cost, tokens and replies for the last 7 or 30 days, this month or last month, a chart of cost per day and the split by workspace, model and key, with notes on unpriced models, when counting started and how the estimate differs from the provider's bill. The chart's code loads only when the page is opened.
+- The line under a finished reply shows its estimated cost.
+- OpenTelemetry traces for operators. With `OTEL_TRACES_EXPORTER=otlp` and the standard `OTEL_EXPORTER_OTLP_*` settings, each turn's model calls, tool calls and subagents are sent as spans named for the `echo` service and tagged with the user id, chat id (`session.id`) and workspace id. Message content, prompts, tool inputs and results and memory are redacted unless `ECHO_TRACE_CONTENT=true`.
+- Each turn ends with one log line giving its status, model, tokens, estimated cost and duration.
+
+### Changed
+- The `done` event's and the stored turn's `usage` now include the side model's work and carry `costMicros` and `unpriced`. The stored `usage` is final and can be slightly higher than `done`'s, because memory extraction and naming finish after it.
+
+### Removed
+- The subagent token tally in the delegation hook, replaced by the usage meter.
+
 ## 0.15.1 (2026-11-27)
 
 ### Fixed

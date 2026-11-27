@@ -32,3 +32,9 @@ export function bytes(n: number): string {
 export function storageLevel(used: number, limit: number): 'ok' | 'warning' | 'error' {
   return used > limit ? 'error' : used >= limit * 0.9 ? 'warning' : 'ok'
 }
+
+/** 41_250 micros -> "$0.04", 3_000 -> "< $0.01": an estimated cost as the app shows it. */
+export function money(micros: number): string {
+  if (micros > 0 && micros < 5_000) return '< $0.01'
+  return (micros / 1_000_000).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
+}

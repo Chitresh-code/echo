@@ -32,6 +32,7 @@
       <a href="keys.html">Model keys</a>
       <a href="mcp.html">Connectors</a>
       <a href="approvals.html">Tool approvals</a>
+      <a href="usage.html">Usage and cost</a>
       <p>Running Echo</p>
       <a href="install.html" aria-current="page">Install and set up</a>
       <a href="data.html">Data and backups</a>
@@ -83,6 +84,13 @@ ECHO_SECRET_KEY=a key you generate, see below</code></pre>
       <p>Browsers send every name ending in <code>.localhost</code> to your own machine, so this needs no other setup. Use the same port as <code>ECHO_PUBLIC_URL</code>. Restart the api afterwards.</p>
       <p>Anywhere else the address must be <code>https</code>, and you need a wildcard DNS name, such as <code>*.echo-preview.example.net</code>, pointing at Echo, with a wildcard certificate for it. Use a different domain from Echo's own if you can. Echo refuses to start if the preview name is the same as Echo's, sits under or above it, or has a path.</p>
 
+      <h2 id="tracing">Send traces to your observability tool</h2>
+      <p>Echo can send an OpenTelemetry trace of every reply, with a span for each model call, tool call and subagent and the tokens each used, to any OTLP collector such as Langfuse, Honeycomb or Jaeger. It is off until you set the exporter in <code>.env</code>:</p>
+      <pre><code>OTEL_TRACES_EXPORTER=otlp
+OTEL_EXPORTER_OTLP_ENDPOINT=https://your-collector:4318
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer your-token</code></pre>
+      <p>Spans name the service <code>echo</code> (set <code>OTEL_SERVICE_NAME</code> to change it) and carry the person's Echo user id, the chat id as <code>session.id</code> and the workspace id, never an email. Messages, prompts, tool inputs and results and the agent's notes are replaced with <code>[REDACTED]</code>, because they hold people's code and whatever their tools read. Set <code>ECHO_TRACE_CONTENT=true</code> to send them, only to a collector you trust with that. Restart the api after changing any of these. Each reply also ends with one log line giving its model, tokens, estimated cost and duration.</p>
+
       <h2 id="start">Start Echo</h2>
       <pre><code>docker compose up --build</code></pre>
       <p>Echo will not start if a setting is missing or malformed, and it says which one without printing secret values. Settings are read only when Echo starts, so restart it after changing <code>.env</code>:</p>
@@ -101,7 +109,7 @@ ECHO_PUBLIC_URL=http://localhost:8010</code></pre>
       <pre><code>docker compose logs api | grep &lt;request_id&gt;</code></pre>
       <p>When someone cannot sign in, the log also has the reason Microsoft gave.</p>
       <nav class="pager" aria-label="Previous and next">
-        <a class="prev" href="approvals.html"><small>Previous</small>Tool approvals</a>
+        <a class="prev" href="usage.html"><small>Previous</small>Usage and cost</a>
         <a class="next" href="data.html"><small>Next</small>Data and backups</a>
       </nav>
     </article>

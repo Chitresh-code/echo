@@ -37,10 +37,6 @@ def start(hook, child, text):
     hook._started(NS(agent=child, messages=[{"role": "user", "content": [{"text": text}]}]))
 
 
-def finish(hook, child, usage):
-    hook._finished(NS(agent=child, result=NS(metrics=NS(accumulated_usage=usage))))
-
-
 def test_children_are_tied_to_their_calls_and_reported():
     hook, sent = setup()
     call(hook, hook.parent, "p1", "subagent", {"task": "Find the TODOs"})
@@ -85,18 +81,7 @@ def test_an_unmatched_child_takes_the_oldest_unclaimed_call():
 def test_the_parent_is_never_reported_or_changed():
     hook, sent = setup()
     start(hook, hook.parent, "hello")
-    finish(hook, hook.parent, {"inputTokens": 999})
-    assert sent == [] and hook.parent.system_prompt == "generic role" and hook.total_usage()["inputTokens"] == 0
-
-
-def test_usage_keeps_each_childs_latest_total():
-    hook, _ = setup()
-    a, b = FakeAgent(), FakeAgent()
-    finish(hook, a, {"inputTokens": 30, "outputTokens": 3})
-    finish(hook, a, {"inputTokens": 40, "outputTokens": 4})  # cumulative across a resume
-    finish(hook, b, {"inputTokens": 10, "outputTokens": 1, "cacheReadInputTokens": 5})
-    hook._finished(NS(agent=b, result=None))
-    assert hook.total_usage() == {"inputTokens": 50, "outputTokens": 5, "cacheReadInputTokens": 5, "cacheWriteInputTokens": 0}
+    assert sent == [] and hook.parent.system_prompt == "generic role"
 
 
 def test_hooks_from_another_thread_reach_emit():

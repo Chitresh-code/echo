@@ -22,6 +22,8 @@ from apps.chat.services.recorder import Writer
 from apps.chat.services.sse import done_data, message, parse, to_sse
 from apps.mcp.services import mcp_service
 from apps.mcp.services.connect import TurnMcp
+from apps.usage.repositories import usage as ledger
+from apps.usage.services.meter import Meter
 from core.config import get_settings
 from core.request_id import current
 
@@ -168,7 +170,7 @@ async def _hashes(snapshot: Snapshot | None) -> dict[str, str] | None:
 
 async def _run(
     make_agent: MakeAgent, prompt: str, timeout: int, cancel: threading.Event, queue: asyncio.Queue, snapshot: Snapshot | None, gate: Approvals,
-    mcp: TurnMcp | None = None, save_mcp: Callable[[dict], None] = lambda changes: None,
+    mcp: TurnMcp | None = None, save_mcp: Callable[[dict], None] = lambda changes: None, meter: Meter | None = None,
 ) -> None:
     seen_tools: set[str] = set()
     loop = asyncio.get_running_loop()
@@ -191,7 +193,7 @@ async def _run(
                 async for event in agent.stream_async(prompt, cancel_signal=cancel):
                     if "result" in event:
                         # Held until the skills are compared, so done stays the last event.
-                        done = done_data(event["result"], delegation.total_usage())
+                        done = done_data(event["result"], meter)
                     elif sse := to_sse(event, seen_tools):
                         await queue.put(sse)
                 # Inside the block, so done is not held back while the agent saves its memory.
@@ -248,6 +250,8 @@ def start_turn(
     side_tasks: Sequence[SideTask] = (),
     approval_mode: Mode = "ask",
     mcp: TurnMcp | None = None,
+    meter: Meter | None = None,
+    credential_id: str | None = None,
 ) -> LiveTurn:
     """Starts a turn that runs until it ends, is stopped or the api shuts down. Its rows are only
     queued, never awaited, so the stream starts at once."""
@@ -267,13 +271,13 @@ def start_turn(
     loop = asyncio.get_running_loop()
     turn.gate = Approvals(agent_id, user_id, approval_mode, lambda sse: loop.call_soon_threadsafe(queue.put_nowait, sse))
     save_mcp = lambda changes: writer.put(mcp_service.save_changes(get_settings(), user_id, changes))  # noqa: E731
-    turn.task = asyncio.create_task(_run(make_agent, prompt, timeout, turn.cancel, queue, snapshot, turn.gate, mcp, save_mcp))
+    turn.task = asyncio.create_task(_run(make_agent, prompt, timeout, turn.cancel, queue, snapshot, turn.gate, mcp, save_mcp, meter))
     # A task cancelled before it first runs never reaches _run's finally; this ends the pump anyway (a second None is skipped).
     turn.task.add_done_callback(lambda _: queue.put_nowait(None))
     # Not cancelled with the turn: each bounds its own time, and its result (a workspace's name)
     # should land even if the turn is stopped.
     turn.side = [asyncio.create_task(_side(work, queue)) for work in side_tasks]
-    _pumps.add(pump := asyncio.create_task(_pump(turn, queue, writer)))
+    _pumps.add(pump := asyncio.create_task(_pump(turn, queue, writer, meter, credential_id)))
     pump.add_done_callback(_pumps.discard)
     return turn
 
@@ -302,7 +306,7 @@ def _flush(turn: LiveTurn, writer: Writer) -> None:
         writer.put(lambda db: chats.add_events(db, turn.id, rows))
 
 
-async def _pump(turn: LiveTurn, queue: asyncio.Queue, writer: Writer) -> None:
+async def _pump(turn: LiveTurn, queue: asyncio.Queue, writer: Writer, meter: Meter | None = None, credential_id: str | None = None) -> None:
     """Hands the turn's events to the pages reading it and to the writer, then records how it ended."""
     loop = asyncio.get_running_loop()
     flushed_at, pending = loop.time(), 0
@@ -348,8 +352,29 @@ async def _pump(turn: LiveTurn, queue: asyncio.Queue, writer: Writer) -> None:
             for q in turn.subscribers:
                 q.put_nowait(None)
             _flush(turn, writer)
+            if meter is not None:
+                # Read after the agent has shut down and side work has finished, so the record holds
+                # memory extraction and the workspace title too, and a failed or stopped turn still
+                # records what it spent.
+                turn.usage = meter.summary()
+                # shortcut: rows are written once the turn ends, so an api stopped mid-turn loses that turn's usage; write per call if that shows up.
+                if rows := meter.rows(turn.user_id, turn.agent_id, turn.chat_id, turn.id, credential_id, turn.ended_at):
+                    writer.put(lambda db: ledger.add_rows(db, rows))
+            _log_end(turn)
             status, usage, truncated, at = turn.status, turn.usage, turn.truncated, turn.ended_at
             writer.put(lambda db: chats.end_turn(db, turn.id, status, usage, truncated, at), then=lambda: _live.pop(turn.id, None))
+
+
+def _log_end(turn: LiveTurn) -> None:
+    """One line per finished turn for whoever runs Echo: what it used and cost. Never the prompt."""
+    usage = turn.usage or {}
+    cost = usage.get("costMicros")
+    logger.info(
+        "turn %s %s model=%s in=%s out=%s cache_read=%s cache_write=%s cost=%s seconds=%.1f",
+        turn.id, turn.status, turn.model, usage.get("inputTokens", 0), usage.get("outputTokens", 0),
+        usage.get("cacheReadInputTokens", 0), usage.get("cacheWriteInputTokens", 0),
+        f"${cost / 1_000_000:.6f}" if cost is not None else "unpriced", (turn.ended_at - turn.started_at).total_seconds(),
+    )
 
 
 async def subscribe(turn: LiveTurn) -> AsyncIterator[str]:

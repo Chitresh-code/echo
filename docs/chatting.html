@@ -32,6 +32,7 @@
       <a href="keys.html">Model keys</a>
       <a href="mcp.html">Connectors</a>
       <a href="approvals.html">Tool approvals</a>
+      <a href="usage.html">Usage and cost</a>
       <p>Running Echo</p>
       <a href="install.html">Install and set up</a>
       <a href="data.html">Data and backups</a>
@@ -62,7 +63,7 @@
       <p>What you type and have not sent is kept for each workspace, and for the home screen, while the browser tab stays open, so you can go to Credentials or another workspace and come back to it. Signing out clears it. If a message cannot be sent, such as when you are at the workspace limit or a reply is still running, it stays in the box with the reason above it.</p>
 
       <h2 id="follow">Follow along</h2>
-      <p>The reply appears as it is written. Each tool the agent uses shows as a row with the tool's name, such as <code>shell</code>, <code>read</code>, <code>edit</code> or <code>write</code>, and what it acted on: the command, the file, the web address or the skill it loaded. A row turns red when the call failed. The output of commands is not shown; the agent tells you what matters. When the reply is done you see the tokens it used and how long it took, and the files panel reloads, since the agent may have changed files.</p>
+      <p>The reply appears as it is written. Each tool the agent uses shows as a row with the tool's name, such as <code>shell</code>, <code>read</code>, <code>edit</code> or <code>write</code>, and what it acted on: the command, the file, the web address or the skill it loaded. A row turns red when the call failed. The output of commands is not shown; the agent tells you what matters. When the reply is done you see its estimated cost, the tokens it used and how long it took (see <a href="usage.html">Usage and cost</a>), and the files panel reloads, since the agent may have changed files.</p>
       <p>When the reply added, changed or removed a skill, a <b>Learned</b> line names it. <a href="teaching.html">Teaching your agent</a> explains it.</p>
 
       <h2 id="plans">Plans and subagents</h2>
@@ -104,7 +105,7 @@
       <ul>
         <li>One message at a time per chat, and up to 2 replies running at once across all your chats, unless whoever runs Echo set another number.</li>
         <li>A reply stops after 30 minutes, and each command the agent runs stops after 2 minutes unless the agent asks for longer, up to 30 minutes.</li>
-        <li>To keep cost down, summaries of web pages and the agent's notes are made by the provider's small model on the same key, and are not counted in the tokens shown.</li>
+        <li>To keep cost down, summaries of web pages and the agent's notes are made by the provider's small model on the same key. Their tokens and cost are counted with the reply.</li>
       </ul>
       <nav class="pager" aria-label="Previous and next">
         <a class="prev" href="teaching.html"><small>Previous</small>Teaching your agent</a>

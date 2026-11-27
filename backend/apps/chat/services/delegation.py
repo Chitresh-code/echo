@@ -10,9 +10,9 @@ import threading
 from collections.abc import Callable
 
 from strands import Agent
-from strands.hooks import AfterInvocationEvent, AfterToolCallEvent, BeforeInvocationEvent, BeforeToolCallEvent, HookProvider, HookRegistry
+from strands.hooks import AfterToolCallEvent, BeforeInvocationEvent, BeforeToolCallEvent, HookProvider, HookRegistry
 
-from apps.chat.services.sse import USAGE_KEYS, detail, message
+from apps.chat.services.sse import detail, message
 
 SUBAGENT = "subagent"
 
@@ -28,18 +28,11 @@ class Delegation(HookProvider):
         self._pending: dict[str, str] = {}
         # Child agent to the tool use id that started it. Holding the agent keeps its identity unique.
         self._children: dict[Agent, str] = {}
-        # Each child's latest usage, which is cumulative across its invocations.
-        self._usage: dict[Agent, dict] = {}
 
     def register_hooks(self, registry: HookRegistry, **kwargs) -> None:
         registry.add_callback(BeforeInvocationEvent, self._started)
         registry.add_callback(BeforeToolCallEvent, self._tool_started)
         registry.add_callback(AfterToolCallEvent, self._tool_finished)
-        registry.add_callback(AfterInvocationEvent, self._finished)
-
-    def total_usage(self) -> dict[str, int]:
-        with self._lock:
-            return {key: sum(u.get(key, 0) for u in self._usage.values()) for key in USAGE_KEYS}
 
     def _started(self, event: BeforeInvocationEvent) -> None:
         child = event.agent
@@ -84,12 +77,6 @@ class Delegation(HookProvider):
             return
         if (call_id := self._call_of(event.agent)) is not None:
             self.emit(message("delegate_tool_result", {"delegate": call_id, "id": use["toolUseId"], "ok": ok}))
-
-    def _finished(self, event: AfterInvocationEvent) -> None:
-        if event.agent is self.parent or event.result is None:
-            return
-        with self._lock:
-            self._usage[event.agent] = dict(event.result.metrics.accumulated_usage)
 
     def task_for(self, child: Agent) -> str | None:
         """The task of the subagent call that started `child`, or None when it is not a child."""

@@ -32,6 +32,7 @@
       <a href="keys.html">Model keys</a>
       <a href="mcp.html">Connectors</a>
       <a href="approvals.html">Tool approvals</a>
+      <a href="usage.html">Usage and cost</a>
       <p>Running Echo</p>
       <a href="install.html">Install and set up</a>
       <a href="data.html">Data and backups</a>
@@ -165,6 +166,16 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
         <dt><code>mcp_server_error</code></dt><dd>The server could not be reached or did not answer as an MCP server. The details are in Echo's log.</dd>
       </dl>
 
+      <h2 id="usage">Usage</h2>
+      <p><code>GET /api/usage?start=2026-11-01&amp;end=2026-11-30&amp;tz=Europe/Berlin</code> reports your usage over the whole days from <code>start</code> to <code>end</code> (at most 366) in the IANA time zone <code>tz</code> (UTC when left out). An unknown zone answers <code>usage_timezone_invalid</code> and a reversed or too long range <code>usage_range_invalid</code>. Money is in integer millionths of a US dollar (<code>cost_micros</code>), estimated from public list prices.</p>
+      <ul>
+        <li><code>totals</code>: <code>cost_micros</code>, the four token counts, <code>turns</code>, and <code>unpriced_tokens</code>, the tokens of models with no known price, which are left out of the cost.</li>
+        <li><code>days</code>: one <code>{date, cost_micros, tokens}</code> per day of the range, zero on days without usage.</li>
+        <li><code>workspaces</code>, <code>models</code> and <code>keys</code>: <code>{id, name, provider, cost_micros, tokens, turns, unpriced_tokens}</code>, most expensive first. <code>name</code> is <code>null</code> for a deleted workspace or key, and a model's <code>id</code> is <code>provider/model</code>.</li>
+        <li><code>prices</code>: <code>{source, fetched}</code>, where the price list came from and when.</li>
+        <li><code>since</code>: when your first counted usage was recorded, or <code>null</code>.</li>
+      </ul>
+
       <h2 id="chat">Chats</h2>
       <p>Start a chat, then send messages to it. Each chat keeps its own conversation, and an agent can have many.</p>
       <pre><code>curl -b "$ECHO" -X POST http://localhost:8000/api/agents/{id}/chats</code></pre>
@@ -193,7 +204,7 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
         <dt><code>approval_done</code></dt><dd><code>{id, decision}</code>: how a waiting call was answered: <code>allow</code>, <code>always</code>, <code>deny</code> or <code>timeout</code>.</dd>
         <dt><code>mcp_unavailable</code></dt><dd><code>{server, reason, detail}</code>: one of the agent's MCP servers is left out of this turn, and why. <code>detail</code> is the end of a local server's error output when it exited, and is never shown to the model.</dd>
         <dt><code>title</code></dt><dd><code>{name}</code>: the name the workspace was given from your first message, sent once in the first turn of a workspace created without a name. It can arrive after <code>done</code>, so read the stream to its end. Until it comes, the workspace is named after the start of the message.</dd>
-        <dt><code>done</code></dt><dd>The turn is over. <code>usage</code> holds the tokens it used on your model, subagents included (<code>inputTokens</code>, <code>outputTokens</code>, <code>cacheReadInputTokens</code>, <code>cacheWriteInputTokens</code>), not counting summaries made by the provider's small model. <code>learned</code> lists the skills the turn added, changed or removed.</dd>
+        <dt><code>done</code></dt><dd>The turn is over. <code>usage</code> holds the tokens it used so far on every model, subagents and the small model's side work included (<code>inputTokens</code>, <code>outputTokens</code>, <code>cacheReadInputTokens</code>, <code>cacheWriteInputTokens</code>), with <code>costMicros</code>, the estimated cost in millionths of a US dollar (<code>null</code> when no call had a known price), and <code>unpriced</code>, true when some calls had none. Side work that ends after <code>done</code> is added to the turn's stored <code>usage</code>, which is final. <code>learned</code> lists the skills the turn added, changed or removed.</dd>
         <dt><code>stopped</code></dt><dd>The turn was stopped on request.</dd>
         <dt><code>error</code></dt><dd>The turn stopped early. It has a <code>code</code> and, when the server failed, a <code>request_id</code>.</dd>
       </dl>

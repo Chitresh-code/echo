@@ -9,6 +9,8 @@ import { SignIn } from './pages/SignIn'
 
 // The workspace page carries Monaco, by far the largest part of the app, so it loads only when opened.
 const Workspace = lazy(() => import('./pages/Workspace'))
+// The usage chart's library is large and only this page uses it.
+const Usage = lazy(() => import('./pages/Usage').then((m) => ({ default: m.Usage })))
 
 // Links and bookmarks from before workspaces had their own address.
 function OldAgentLink() {
@@ -29,6 +31,7 @@ export const routes: RouteObject[] = [
           { path: '/w/:agentId/c/:chatId', element: <Suspense><Workspace /></Suspense> },
           { path: '/credentials', element: <Credentials /> },
           { path: '/mcp', element: <McpServers /> },
+          { path: '/usage', element: <Suspense><Usage /></Suspense> },
           { path: '/agents/:agentId', element: <OldAgentLink /> },
         ],
       },

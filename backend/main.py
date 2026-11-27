@@ -15,6 +15,7 @@ from apps.mcp.routers.mcp_router import oauth_router as mcp_oauth_router
 from apps.mcp.routers.mcp_router import router as mcp_router
 from apps.preview.routers.preview_router import router as preview_router
 from apps.terminal.routers.terminal_router import router as terminal_router
+from apps.usage.routers.usage_router import router as usage_router
 from apps.terminal.routers.terminal_router import (
     socket_router as terminal_socket_router,
 )
@@ -71,6 +72,7 @@ def create_app(web_dir: Path | None = None) -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(credential_router)
+    app.include_router(usage_router)
     app.include_router(mcp_router)
     app.include_router(mcp_oauth_router)
     app.include_router(agent_router)

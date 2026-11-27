@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, ApiError, errorText } from '../api/client'
 import { streamTurn, type PlanItem, type TurnEvent } from '../api/stream'
 import type { Agent, Usage } from '../api/types'
-import { compact } from '../format'
+import { compact, money } from '../format'
 import { MONO } from '../theme'
 import type { Command } from '../composer/commands'
 import { Composer, writeDraft } from '../composer/Composer'
@@ -108,6 +108,8 @@ export function fromTurns(turns: StoredTurn[]): Message[] {
       { role: 'user', text: turn.prompt },
       {
         ...agent,
+        // The stored count is final: it adds the work the turn did after its reply was sent.
+        usage: turn.usage ?? agent.usage,
         seconds: seconds(turn),
         truncated: turn.truncated || undefined,
         error: agent.error ?? (turn.status === 'interrupted' ? INTERRUPTED : undefined),
@@ -517,6 +519,7 @@ export function Chat({ agentId, agent, onAgent, chatId: openedId, initial, onCha
                 {(m.usage || m.seconds !== undefined) && !(i === messages.length - 1 && running) && (
                   <Typography color="text.secondary" sx={{ fontSize: 12 }}>
                     {m.usage && `${compact(m.usage.inputTokens + m.usage.cacheReadInputTokens + m.usage.cacheWriteInputTokens)} in · ${compact(m.usage.outputTokens)} out · `}
+                    {m.usage?.costMicros != null && !m.usage.unpriced && `${money(m.usage.costMicros)} · `}
                     {m.seconds} s
                   </Typography>
                 )}

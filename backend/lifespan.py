@@ -10,6 +10,7 @@ from apps.chat.repositories import chats
 from apps.chat.services import turn_service
 from apps.chat.services.legacy_import import import_older_chats
 from apps.chat.services.recorder import Writer
+from apps.usage.services import tracing
 from core.config import get_settings
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
@@ -23,6 +24,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # Fail at startup, not on the first request, when the environment or the data volume is wrong.
     settings = get_settings()
+    # Before any agent exists: the SDK reads its trace settings once.
+    tracing.configure()
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(dir=settings.data_dir):
         pass

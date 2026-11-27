@@ -9,8 +9,10 @@ from strands.models import Model
 
 
 class ScriptedModel(Model):
-    def __init__(self, replies: list[list[tuple]]):
+    def __init__(self, replies: list[list[tuple]], usage: dict | None = None):
         self.replies = replies
+        # Reported at the end of every call when set, as a provider reports its token counts.
+        self.usage = usage
         self.calls = 0
         # How many messages the model was given on each call, to check a session resumed.
         self.message_counts: list[int] = []
@@ -56,3 +58,5 @@ class ScriptedModel(Model):
                 yield {"contentBlockDelta": {"delta": {"toolUse": {"input": json.dumps(part[2])}}}}
             yield {"contentBlockStop": {}}
         yield {"messageStop": {"stopReason": "tool_use" if uses_tool else "end_turn"}}
+        if self.usage:
+            yield {"metadata": {"usage": {**self.usage, "totalTokens": 0}, "metrics": {"latencyMs": 1}}}

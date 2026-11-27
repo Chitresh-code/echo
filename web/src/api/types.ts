@@ -12,7 +12,29 @@ export type FileContent = { content: string; encoding: 'utf-8' | 'base64' }
 export type AgentFile = FileContent & { path: string }
 export type GitFileStatus = { path: string; index: string; worktree: string; original_path: string | null }
 export type GitFileVersions = { head: FileContent | null; working: FileContent | null }
-export type Usage = { inputTokens: number; outputTokens: number; cacheReadInputTokens: number; cacheWriteInputTokens: number }
+export type Usage = {
+  inputTokens: number
+  outputTokens: number
+  cacheReadInputTokens: number
+  cacheWriteInputTokens: number
+  /** Estimated cost in millionths of a dollar; null when no call had a known price, absent on turns from before costs were counted. */
+  costMicros?: number | null
+  /** True when some calls had no known price, so the cost leaves them out. */
+  unpriced?: boolean
+}
+
+/** One workspace, model or key's part of a usage period. */
+export type UsageShare = { id: string; name: string | null; provider: string | null; cost_micros: number; tokens: number; turns: number; unpriced_tokens: number }
+
+export type UsageReport = {
+  totals: { cost_micros: number; input_tokens: number; output_tokens: number; cache_read_tokens: number; cache_write_tokens: number; turns: number; unpriced_tokens: number }
+  days: { date: string; cost_micros: number; tokens: number }[]
+  workspaces: UsageShare[]
+  models: UsageShare[]
+  keys: UsageShare[]
+  prices: { source: string; fetched: string }
+  since: string | null
+}
 export type Effort = 'auto' | 'off' | 'low' | 'medium' | 'high'
 
 export const PROVIDERS: Record<Provider, string> = {

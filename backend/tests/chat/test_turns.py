@@ -70,7 +70,7 @@ def test_turn_streams_text_tools_and_done(monkeypatch, fake_runner):
     assert [e for e, _ in events] == ["text", "tool", "text", "tool_detail", "tool_result", "text", "text", "done"]
     assert events[2][1]["text"] == "\n\n" and events[3][1]["detail"] == "echo hi" and events[4][1]["ok"] is True
     assert events[1][1]["name"] == "shell" and events[-1][1]["stopReason"] == "end_turn"
-    assert set(events[-1][1]["usage"]) == {"inputTokens", "outputTokens", "cacheReadInputTokens", "cacheWriteInputTokens"}
+    assert set(events[-1][1]["usage"]) == {"inputTokens", "outputTokens", "cacheReadInputTokens", "cacheWriteInputTokens", "costMicros", "unpriced"}
     assert any(r["command"] == "echo hi" and r["workspace_id"] == WS for r in fake_runner.requests)
     assert (get_settings().data_dir / "sessions" / WS).is_dir()
 

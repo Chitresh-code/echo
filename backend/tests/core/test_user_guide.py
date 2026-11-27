@@ -10,6 +10,7 @@ PAGES = (
     "keys.html",
     "mcp.html",
     "approvals.html",
+    "usage.html",
     "install.html",
     "data.html",
     "api.html",

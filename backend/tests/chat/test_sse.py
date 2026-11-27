@@ -82,8 +82,7 @@ def test_a_plan_is_sent_cut_to_size():
     assert to_sse({"message": reply}, set()) == 'event: todos\ndata: {"items": [{"text": "Read", "status": "completed"}, {"text": "Fixing", "status": "in_progress"}]}\n\n'
 
 
-def test_done_adds_the_subagents_tokens():
-    result = SimpleNamespace(stop_reason="end_turn", metrics=SimpleNamespace(accumulated_usage={"inputTokens": 100, "outputTokens": 10}))
-    assert done_data(result, {"inputTokens": 50, "outputTokens": 5, "cacheReadInputTokens": 7, "totalTokens": 62})["usage"] == {
-        "inputTokens": 150, "outputTokens": 15, "cacheReadInputTokens": 7, "cacheWriteInputTokens": 0,
-    }
+def test_done_takes_the_meters_usage_and_cost():
+    result = SimpleNamespace(stop_reason="end_turn", metrics=SimpleNamespace(accumulated_usage={"inputTokens": 100}))
+    meter = SimpleNamespace(summary=lambda: {"inputTokens": 150, "costMicros": 12, "unpriced": False})
+    assert done_data(result, meter) == {"stopReason": "end_turn", "usage": {"inputTokens": 150, "costMicros": 12, "unpriced": False}}

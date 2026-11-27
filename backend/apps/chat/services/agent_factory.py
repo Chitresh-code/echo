@@ -14,6 +14,7 @@ from apps.chat.services import history
 from apps.chat.services.approvals import Approvals
 from apps.chat.services.delegation import Delegation
 from apps.chat.services.process_tool import process_tool
+from apps.usage.services import tracing
 from apps.mcp.services.connect import TurnMcp
 from core.config import Settings
 from sandbox.runner_sandbox import WORKSPACES_ROOT, RunnerSandbox
@@ -135,6 +136,7 @@ def build_agent(
     delegation: Delegation,
     approvals: Approvals | None = None,
     mcp: TurnMcp | None = None,
+    user_id: str = "",
 ) -> Agent:
     """`model_key` is `provider/model`, recorded so a later turn on another model can tell.
     `side_model` summarizes fetched pages and extracts memories, so that work does not run on the
@@ -182,6 +184,7 @@ def build_agent(
         interventions=[approvals] if approvals is not None else None,
         instructions=text,
         callback_handler=None,
+        trace_attributes=tracing.turn_attributes(user_id, workspace_id, chat_id),
     )
     delegation.parent, delegation.rules = agent, shared_rules(root, settings)
     if approvals is not None:
