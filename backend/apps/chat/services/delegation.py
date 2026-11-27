@@ -91,6 +91,11 @@ class Delegation(HookProvider):
         with self._lock:
             self._usage[event.agent] = dict(event.result.metrics.accumulated_usage)
 
+    def task_for(self, child: Agent) -> str | None:
+        """The task of the subagent call that started `child`, or None when it is not a child."""
+        call_id = self._call_of(child)
+        return None if call_id is None else self._task_of(call_id)
+
     def _call_of(self, child: Agent) -> str | None:
         with self._lock:
             return self._children.get(child)

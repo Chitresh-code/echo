@@ -1,4 +1,5 @@
 import Add from '@mui/icons-material/Add'
+import CableOutlined from '@mui/icons-material/CableOutlined'
 import DarkModeOutlined from '@mui/icons-material/DarkModeOutlined'
 import KeyOutlined from '@mui/icons-material/KeyOutlined'
 import LightModeOutlined from '@mui/icons-material/LightModeOutlined'
@@ -64,6 +65,7 @@ export function Sidebar({ collapsed = false, onToggle }: Props) {
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.25 }}>
         <NavItem to="/" end icon={<Add fontSize="small" />} label="New workspace" collapsed={collapsed} />
         <NavItem to="/credentials" icon={<KeyOutlined fontSize="small" />} label="Credentials" collapsed={collapsed} />
+        <NavItem to="/mcp" icon={<CableOutlined fontSize="small" />} label="Connectors" collapsed={collapsed} />
       </Box>
       {collapsed ? <Box sx={{ flexGrow: 1 }} /> : <Recent />}
       <Account collapsed={collapsed} />

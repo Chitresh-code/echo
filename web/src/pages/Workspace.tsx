@@ -20,6 +20,7 @@ import { DeleteDialog, NameInput } from '../layout/WorkspaceActions'
 import { useWorkspaces } from '../layout/workspaces'
 import { MONO } from '../theme'
 import { AgentDialog } from './AgentDialog'
+import { useMcpServers } from '../agent/workspaceCommands'
 import type { Handover } from './Home'
 
 const PANEL = 'echo.panel'
@@ -76,6 +77,8 @@ function WorkspacePage({ agentId, chatId }: { agentId: string; chatId: string | 
   const [error, setError] = useState('')
   // Kept apart from error, which a tree refresh clears.
   const [notice, setNotice] = useState('')
+  const [mcpError, setMcpError] = useState('')
+  const mcp = useMcpServers(agentId, setMcpError)
   const [version, setVersion] = useState(0)
   const [renaming, setRenaming] = useState(false)
   const [menu, setMenu] = useState<HTMLElement | null>(null)
@@ -137,6 +140,8 @@ function WorkspacePage({ agentId, chatId }: { agentId: string; chatId: string | 
   const turnStarted = useCallback(() => {
     api<Agent>(`/api/agents/${agentId}`).then((a) => (setAgent(a), upsert(a)), () => {})
   }, [agentId, upsert])
+
+  const saved = useCallback((a: Agent) => (setAgent(a), upsert(a)), [upsert])
 
   const titled = useCallback((name: string) => {
     const current = liveRef.current
@@ -254,6 +259,7 @@ function WorkspacePage({ agentId, chatId }: { agentId: string; chatId: string | 
         <MenuItem onClick={() => (menu?.focus(), setDialog('purpose'), setMenu(null))}>Name and purpose…</MenuItem>
         <MenuItem onClick={() => (menu?.focus(), setDialog('delete'), setMenu(null))} sx={{ color: 'error.main' }}>Delete…</MenuItem>
       </Menu>
+      {mcpError && <Alert severity="error" onClose={() => setMcpError('')} sx={{ borderRadius: 0 }}>{mcpError}</Alert>}
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ borderRadius: 0 }}>{error}</Alert>}
       {notice && <Alert severity="info" onClose={() => setNotice('')} sx={{ borderRadius: 0 }}>{notice}</Alert>}
 
@@ -262,6 +268,8 @@ function WorkspacePage({ agentId, chatId }: { agentId: string; chatId: string | 
           <Chat
             key={shown.key}
             agentId={agentId}
+            agent={agent}
+            onAgent={saved}
             chatId={shown.id}
             initial={shown.key === 0 ? initial : undefined}
             onChatId={adopted}
@@ -270,6 +278,7 @@ function WorkspacePage({ agentId, chatId }: { agentId: string; chatId: string | 
             onTurnDone={afterTurn}
             onTitle={titled}
             onOpen={openFile}
+            mcp={mcp.command}
           />
         </Box>
         {panelMounted && (
@@ -317,12 +326,11 @@ function WorkspacePage({ agentId, chatId }: { agentId: string; chatId: string | 
         <AgentDialog
           title="Name and purpose"
           submitLabel="Save"
-          initial={{ name: live.name, job: live.job }}
+          initial={{ name: live.name, job: live.job, approval_mode: agent?.approval_mode ?? 'ask' }}
+          mcp={mcp}
           onClose={() => setDialog(null)}
           onSubmit={async (value) => {
-            const saved = await api<Agent>(`/api/agents/${agentId}`, { method: 'PATCH', body: value })
-            setAgent(saved)
-            upsert(saved)
+            saved(await api<Agent>(`/api/agents/${agentId}`, { method: 'PATCH', body: value }))
             setDialog(null)
           }}
         />

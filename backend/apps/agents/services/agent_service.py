@@ -34,7 +34,7 @@ from apps.agents.models.agent import (
 from apps.agents.repositories import agents
 from apps.agents.services.git_status import parse_porcelain
 from apps.agents.services.paths import check_agent_id, safe_relpath
-from apps.chat.services import turn_service
+from apps.chat.services import approvals, turn_service
 from core.config import Settings
 from core.errors import AppError
 from sandbox import processes
@@ -76,7 +76,7 @@ async def create_agent(settings: Settings, db: AsyncSession, owner_id: str, new:
     # The runner first: a failed insert leaves an unused folder, never a row pointing at nothing.
     async with runner_client(settings.runner_socket) as client:
         await raise_for_runner_error(await client.post(f"/workspaces/{agent_id}"))
-    agent = await agents.add(db, agent_id, owner_id, new.name or DEFAULT_NAME, new.job)
+    agent = await agents.add(db, agent_id, owner_id, new.name or DEFAULT_NAME, new.job, new.approval_mode)
     await db.commit()
     return agent
 
@@ -131,6 +131,9 @@ async def update_agent(db: AsyncSession, owner_id: str, agent_id: str, change: A
     if fields:
         await agents.update(db, agent_id, owner_id, fields)
         await db.commit()
+    if change.approval_mode is not None:
+        # Turns already running read it on their next call; switching to yolo lets a waiting call run.
+        approvals.set_mode(agent_id, change.approval_mode)
     return await get_agent(db, owner_id, agent_id)
 
 

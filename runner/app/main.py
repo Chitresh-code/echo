@@ -18,7 +18,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app import jail, net, preview, processes, terminals, usage
+from app import jail, mcp_stdio, net, preview, processes, terminals, usage
 
 logger = logging.getLogger("runner")
 
@@ -28,6 +28,12 @@ class ProcessRequest(BaseModel):
     command: str = Field(max_length=100_000)
     cwd: str | None = None
     env: dict[str, str] | None = None
+
+
+class McpStartRequest(BaseModel):
+    command: str
+    args: list[str] = []
+    env: dict[str, str] = {}
 
 
 class TerminalRequest(BaseModel):
@@ -55,11 +61,13 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
 def create_app(settings: jail.Settings) -> FastAPI:
     registry = processes.Registry(settings)
     shells = terminals.Terminals(settings)
+    servers = mcp_stdio.Sessions(settings, registry)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
         yield
         await shells.stop_all()
+        await servers.stop_all()
         await registry.stop_all()
 
     app = FastAPI(title="Echo runner", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -147,6 +155,7 @@ def create_app(settings: jail.Settings) -> FastAPI:
             return _error(404, "workspace_not_found", "There is no workspace with this id.")
         # Before the folders go, so no process is left writing into them.
         await shells.stop_workspace(workspace_id)
+        await servers.stop_workspace(workspace_id)
         await registry.stop_workspace(workspace_id)
         for folder in folders:
             # rmtree removes a link the agent made instead of following it. Off the event loop,
@@ -233,6 +242,54 @@ def create_app(settings: jail.Settings) -> FastAPI:
         process = registry.get(workspace_id, name)
         await registry.stop(process)
         return {"success": True, "data": process.to_json()}
+
+    @app.post("/workspaces/{workspace_id}/mcp")
+    async def start_mcp(workspace_id: str, body: McpStartRequest):
+        check_workspace(workspace_id)
+        full = await usage.used(settings, workspace_id) > usage.limit(settings)
+
+        async def argv_for(program: list[str], timeout: int):
+            await net.ensure(settings, workspace_id)
+            # The server's env is checked like exec's; the jail sets the protected names after it.
+            return jail.build_argv(settings, workspace_id, None, timeout, None, body.env, fsize_mb=0 if full else 1024, program=program)
+
+        session = await servers.start(workspace_id, body.command, body.args, body.env, argv_for)
+        return {"success": True, "data": {"id": session.id}}
+
+    @app.get("/workspaces/{workspace_id}/mcp/{session_id}/messages")
+    async def mcp_messages(workspace_id: str, session_id: str):
+        check_workspace(workspace_id)
+        session = servers.get(workspace_id, session_id)
+        servers.claim(session)
+
+        async def lines() -> AsyncIterator[bytes]:
+            # A client that disconnects cancels this generator, which kills the jail.
+            async for item in servers.messages(session):
+                yield (json.dumps(item) + "\n").encode()
+
+        return StreamingResponse(lines(), media_type="application/x-ndjson")
+
+    @app.post("/workspaces/{workspace_id}/mcp/{session_id}/messages")
+    async def mcp_send(workspace_id: str, session_id: str, request: Request):
+        check_workspace(workspace_id)
+        session = servers.get(workspace_id, session_id)
+        body = await request.body()
+        if len(body) > mcp_stdio.MAX_MESSAGE:
+            return _error(413, "mcp_message_too_large", "An MCP message is at most 4 MB.")
+        try:
+            message = json.loads(body)
+        except ValueError:
+            message = None
+        if not isinstance(message, dict):
+            return _error(422, "validation_error", "The request is not valid.")
+        await servers.send(session, message)
+        return {"success": True, "data": {"sent": True}}
+
+    @app.delete("/workspaces/{workspace_id}/mcp/{session_id}")
+    async def stop_mcp(workspace_id: str, session_id: str):
+        check_workspace(workspace_id)
+        await servers.remove(servers.get(workspace_id, session_id))
+        return {"success": True, "data": {"deleted": True}}
 
     @app.post("/workspaces/{workspace_id}/terminals")
     async def start_terminal(workspace_id: str, body: TerminalRequest):

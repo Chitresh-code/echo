@@ -1,4 +1,7 @@
-export type Agent = { id: string; name: string; job: string; created_at: string; last_used_at: string | null }
+/** ask: the agent waits for the user before a tool that changes something; yolo: every call runs. */
+export type ApprovalMode = 'ask' | 'yolo'
+export type Agent = { id: string; name: string; job: string; created_at: string; last_used_at: string | null; approval_mode: ApprovalMode }
+export type ApprovalDecision = 'allow' | 'deny' | 'always'
 export type User = { id: string; name: string | null; email: string | null }
 export type Provider = 'anthropic' | 'openai' | 'google' | 'openai_compatible'
 export type Credential = { id: string; provider: Provider; label: string; base_url: string | null; key_hint: string; models: string[] | null; created_at: string }
@@ -25,3 +28,23 @@ export type Note = { name: string; text: string; updated_at: string }
 export type Process = { name: string; command: string; cwd: string | null; status: 'running' | 'exited'; exit_code: number | null; started_at: number }
 export type Processes = { processes: Process[]; ports: number[] }
 export type ProcessLog = { name: string; log: string }
+export type McpStatus = 'ok' | 'needs_auth' | 'needs_scope' | 'tools_changed'
+export type McpTool = { name: string; description: string; hints: Record<string, unknown> | null }
+/** A server as the API shows it: the names of its headers and variables, never their values. */
+export type McpServer = {
+  id: string
+  name: string
+  kind: 'remote' | 'local'
+  url: string | null
+  auth: 'none' | 'headers' | 'oauth' | null
+  command: string | null
+  args: string[] | null
+  header_names: string[]
+  env_names: string[]
+  preregistered: boolean
+  status: McpStatus
+  tools: McpTool[]
+  pending_tools: McpTool[] | null
+  pending_hash: string | null
+  created_at: string
+}

@@ -9,11 +9,12 @@ import { step, type Command, type CommandOption } from './commands'
 const visuallyHidden = { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' } as const
 
 /**
- * The model and effort the next message uses, as a quiet line in the corner of the message box.
+ * The model and effort the next message uses, as a quiet line in the corner of the message box,
+ * with "yolo" after them when the workspace runs tools without asking.
  * Clicking it opens every command's options with a search field, for anyone who does not know
  * about `/` or is on a touch screen.
  */
-export function SettingsLabel({ state }: { state: ModelState }) {
+export function SettingsLabel({ state, yolo = false }: { state: ModelState; yolo?: boolean }) {
   const { keys, loadError, retry, choice, effort, commands } = state
   const listId = useId()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
@@ -54,12 +55,12 @@ export function SettingsLabel({ state }: { state: ModelState }) {
     setAnchor(null)
   }
 
-  const text = choice ? choice.model + (effort === 'auto' ? '' : ` · ${effort}`) : 'Choose a model'
+  const text = (choice ? choice.model + (effort === 'auto' ? '' : ` · ${effort}`) : 'Choose a model') + (yolo ? ' · yolo' : '')
   return (
     <>
-      <Tooltip title="Change with /model and /effort" describeChild>
+      <Tooltip title={`Change with ${commands.map((c) => `/${c.name}`).join(', ')}`} describeChild>
         <ButtonBase
-          aria-label={`Model ${choice?.model ?? 'not chosen'}, effort ${effort}. Change`}
+          aria-label={`Model ${choice?.model ?? 'not chosen'}, effort ${effort}${yolo ? ', tools run without asking' : ''}. Change`}
           aria-haspopup="dialog"
           disabled={!keys}
           onClick={(e) => {

@@ -5,7 +5,10 @@ network or cloud metadata (SSRF).
 The check happens when a connection opens: the host is resolved once, every address it resolves to
 must be public, and the connection goes to an address that was checked. Checking a URL up front and
 connecting later would let a DNS answer change in between. TLS still uses the host name for SNI and
-the certificate check, since httpcore passes the original host to start_tls."""
+the certificate check, since httpcore passes the original host to start_tls.
+
+`client()` is on httpx, which the model SDKs take; `client2()` is the same guard on httpx2, which the
+MCP SDK takes. Both share the address check."""
 
 import ipaddress
 import socket
@@ -13,7 +16,9 @@ from urllib.parse import urlsplit
 
 import anyio
 import httpcore
+import httpcore2
 import httpx
+import httpx2
 
 from core.errors import AppError
 
@@ -39,23 +44,32 @@ async def _getaddrinfo(host: str, port: int) -> list[str]:
     return [info[4][0] for info in await anyio.getaddrinfo(host, port, type=socket.SOCK_STREAM)]
 
 
-class _CheckedBackend(httpcore.AsyncNetworkBackend):
-    def __init__(self):
-        self._inner = httpcore.AnyIOBackend()
+def _checked_backend(core):
+    """The guarded network backend for `core`, httpcore or httpcore2, whose interfaces match."""
 
-    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
-        addresses = await _getaddrinfo(host, port)
-        # Every address, not just the first: otherwise a host with one public and one private
-        # address could be retried until the private one is used.
-        if not addresses or not all(_allowed(a) for a in addresses):
-            raise EndpointNotAllowed(host)
-        return await self._inner.connect_tcp(addresses[0], port, timeout, local_address, socket_options)
+    class CheckedBackend(core.AsyncNetworkBackend):
+        def __init__(self):
+            self._inner = core.AnyIOBackend()
 
-    async def connect_unix_socket(self, path, timeout=None, socket_options=None):
-        raise EndpointNotAllowed(path)
+        async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):
+            addresses = await _getaddrinfo(host, port)
+            # Every address, not just the first: otherwise a host with one public and one private
+            # address could be retried until the private one is used.
+            if not addresses or not all(_allowed(a) for a in addresses):
+                raise EndpointNotAllowed(host)
+            return await self._inner.connect_tcp(addresses[0], port, timeout, local_address, socket_options)
 
-    async def sleep(self, seconds):
-        await self._inner.sleep(seconds)
+        async def connect_unix_socket(self, path, timeout=None, socket_options=None):
+            raise EndpointNotAllowed(path)
+
+        async def sleep(self, seconds):
+            await self._inner.sleep(seconds)
+
+    return CheckedBackend
+
+
+_CheckedBackend = _checked_backend(httpcore)
+_CheckedBackend2 = _checked_backend(httpcore2)
 
 
 def client() -> httpx.AsyncClient:
@@ -69,6 +83,19 @@ def client() -> httpx.AsyncClient:
     return httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False, timeout=TIMEOUT)
 
 
+# MCP servers stream results, so a read can wait as long as a slow tool takes.
+TIMEOUT2 = httpx2.Timeout(30.0, read=300.0)
+
+
+def client2(headers: dict[str, str] | None = None, auth=None) -> httpx2.AsyncClient:
+    """The same guard on httpx2, for the MCP SDK. A new client per connection, since each MCP
+    client runs on its own thread and loop. `auth` is an httpx2 auth flow, such as OAuth."""
+    transport = httpx2.AsyncHTTPTransport()
+    # As in client(): tests/credentials/test_safe_http.py connects through it, so a move fails there.
+    transport._pool._network_backend = _CheckedBackend2()
+    return httpx2.AsyncClient(transport=transport, trust_env=False, follow_redirects=False, timeout=TIMEOUT2, headers=headers, auth=auth)
+
+
 def check_base_url(url: str | None) -> str:
     """An https address with a host and nothing that could smuggle in credentials or change the path."""
     parts = urlsplit(url or "")
@@ -77,12 +104,22 @@ def check_base_url(url: str | None) -> str:
     return url.rstrip("/")
 
 
+def causes(exc: BaseException):
+    """Every error behind `exc`: its cause chain and, since anyio task groups in the MCP SDK wrap
+    errors, the members of any exception group on the way."""
+    seen: set[int] = set()
+    todo = [exc]
+    while todo and len(seen) < 100:  # a bound, in case a chain loops back on itself
+        exc = todo.pop()
+        if exc is None or id(exc) in seen:
+            continue
+        seen.add(id(exc))
+        yield exc
+        if isinstance(exc, BaseExceptionGroup):
+            todo.extend(exc.exceptions)
+        todo.append(exc.__cause__ or exc.__context__)
+
+
 def refused(exc: BaseException) -> bool:
     """Whether an error from a provider SDK was caused by a refused address, however it was wrapped."""
-    for _ in range(20):  # a bound, in case a chain loops back on itself
-        if exc is None:
-            return False
-        if isinstance(exc, EndpointNotAllowed):
-            return True
-        exc = exc.__cause__ or exc.__context__
-    return False
+    return any(isinstance(e, EndpointNotAllowed) for e in causes(exc))

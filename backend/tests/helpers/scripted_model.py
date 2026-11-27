@@ -16,6 +16,9 @@ class ScriptedModel(Model):
         self.message_counts: list[int] = []
         self.first_messages: list | None = None
         self.all_messages: list = []
+        # What each call offered and said, to check which tools and instructions a turn had.
+        self.tool_names: list[list[str]] = []
+        self.system_prompts: list[str | None] = []
         self.config: dict[str, Any] = {"model_id": "scripted"}
 
     def update_config(self, **model_config: Any) -> None:
@@ -35,6 +38,8 @@ class ScriptedModel(Model):
         if self.first_messages is None:
             self.first_messages = messages
         self.all_messages.append(messages)
+        self.tool_names.append([spec["name"] for spec in tool_specs or []])
+        self.system_prompts.append(system_prompt)
         yield {"messageStart": {"role": "assistant"}}
         uses_tool = False
         for i, part in enumerate(reply):

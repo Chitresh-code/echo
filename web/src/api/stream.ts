@@ -1,7 +1,19 @@
 import { unwrap } from './client'
-import type { Usage } from './types'
+import type { ApprovalDecision, Usage } from './types'
 
 export type PlanItem = { text: string; status: 'pending' | 'in_progress' | 'completed' }
+
+/** A tool call waiting for the user. `subagent` is the task of the subagent that made it, or null;
+ *  `input` is cut to a string (with input_cut) when it is too long to show. */
+export type ApprovalRequest = {
+  id: string
+  tool: string
+  server: string | null
+  hints: Record<string, unknown> | null
+  subagent: string | null
+  input: unknown
+  input_cut?: boolean
+}
 
 export type TurnEvent =
   // Always first: the turn's id, to follow it again or stop it. A reader that rejoins gets it again,
@@ -26,6 +38,12 @@ export type TurnEvent =
   | { event: 'error'; data: { code: string; message: string; request_id?: string } }
   // Someone pressed Stop, in this tab or another.
   | { event: 'stopped'; data: Record<string, never> }
+  // A call waits for the user's answer, then how it was answered (timeout: no one did in time).
+  | { event: 'approval_needed'; data: ApprovalRequest }
+  | { event: 'approval_done'; data: { id: string; decision: ApprovalDecision | 'timeout' } }
+  // An MCP server left out of the turn. reason is what the agent was told; detail, when there is one,
+  // is the server's own error output, for the user only.
+  | { event: 'mcp_unavailable'; data: { server: string; reason: string; detail?: string } }
   // The workspace's new name, in the first turn of an unnamed one; it can come after done.
   | { event: 'title'; data: { name: string } }
 

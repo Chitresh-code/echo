@@ -8,6 +8,8 @@ PAGES = (
     "chatting.html",
     "files.html",
     "keys.html",
+    "mcp.html",
+    "approvals.html",
     "install.html",
     "data.html",
     "api.html",

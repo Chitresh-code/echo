@@ -12,7 +12,7 @@ await import('./Workspace')
 vi.mock('../agent/Editor', () => ({ Editor: () => <p>editor</p> }))
 
 const KEY = { id: 'k1', label: 'Mine', provider: 'anthropic', created_at: '2026-11-01T00:00:00Z' }
-const ws = (name: string, used: string | null = null) => ({ id: 'w9', name, job: '', created_at: '2026-11-27T00:00:00Z', last_used_at: used })
+const ws = (name: string, used: string | null = null) => ({ id: 'w9', name, job: '', created_at: '2026-11-27T00:00:00Z', last_used_at: used, approval_mode: 'ask' })
 const usage = { inputTokens: 10, outputTokens: 5, cacheReadInputTokens: 0, cacheWriteInputTokens: 0 }
 
 /** A turn's event stream that the test writes to, and that ends when the page aborts the request.
@@ -43,6 +43,8 @@ let refuseTurn: Response | null
 let stored: Record<string, unknown> | null
 let listed: { id: string; title: string; created_at: string; updated_at: string; running: boolean }[]
 let listFails: boolean
+let patchFails: boolean
+let answerGone: boolean
 let root: Root
 let host: HTMLElement
 let router: ReturnType<typeof createMemoryRouter>
@@ -54,6 +56,8 @@ beforeEach(() => {
   stored = null
   listed = []
   listFails = false
+  patchFails = false
+  answerGone = false
   workspace = ws('New workspace')
   fakeLayout()
   Element.prototype.scrollIntoView = () => {}
@@ -62,6 +66,14 @@ beforeEach(() => {
     calls.push({ method, url, body: init.body ? JSON.parse(init.body as string) : undefined })
     if (url === '/api/auth/me') return ok({ id: 'u', name: 'Ada Lovelace', email: 'ada@example.com' })
     if (url === '/api/agents') return method === 'POST' ? ok(workspace) : ok([workspace])
+    if (url === '/api/agents/w9' && method === 'PATCH') {
+      if (patchFails) return refused(503, 'unavailable', 'The service is busy. Try again in a moment.')
+      workspace = { ...workspace, ...JSON.parse(init.body as string) }
+      return ok(workspace)
+    }
+    if (url.startsWith('/api/agents/w9/approvals/')) {
+      return answerGone ? refused(404, 'approval_not_found', 'Nothing is waiting.') : ok(JSON.parse(init.body as string))
+    }
     if (url === '/api/agents/w9') return ok(workspace)
     if (url === '/api/agents/gone') return refused(404, 'not_found', 'This workspace does not exist.')
     if (url === '/api/credentials') return ok([KEY])
@@ -363,4 +375,96 @@ test('a missing workspace says so and links home', async () => {
   await open('/w/gone')
   expect(heading()).toBe('This workspace does not exist or was deleted')
   expect(byText('main a', 'Start a new workspace').getAttribute('href')).toBe('/')
+})
+
+const CARD = { id: 'a1', tool: 'shell', server: null, hints: null, subagent: 'Survey the tests', input: { command: 'rm -rf build' } }
+const card = () => document.querySelector('[role="group"][aria-label="Approval for shell"]') as HTMLElement
+const button = (text: string) => byText('button', text) as HTMLButtonElement
+const settingsLabel = () => document.querySelector('[aria-label^="Model "]') as HTMLElement
+
+async function startTurn() {
+  await open('/w/w9')
+  await typeMessage('clean up')
+  await press(messageBox(), 'Enter')
+  await settle()
+}
+
+test('an approval card shows the call, posts the answer once, and shows how it was answered', async () => {
+  await startTurn()
+  turns[0].send('approval_needed', CARD)
+  await settle()
+  expect(card().textContent).toContain('shell')
+  expect(card().textContent).toContain('Survey the tests')
+  expect(card().textContent).toContain('"command": "rm -rf build"')
+  expect(document.body.textContent).toContain('Waiting for your approval…')
+  await click(button('Allow for this chat'))
+  await settle()
+  expect(calls.filter((c) => c.url.includes('/approvals/'))).toEqual([{ method: 'POST', url: '/api/agents/w9/approvals/a1', body: { decision: 'always' } }])
+  expect(button('Allow').disabled).toBe(true)
+  turns[0].send('approval_done', { id: 'a1', decision: 'always' })
+  await settle()
+  expect(card().textContent).toContain('Allowed for the rest of this chat')
+  expect(button('Allow')).toBeUndefined()
+  expect(document.body.textContent).toContain('Working…')
+})
+
+test('an answer that comes too late says so and the card stays answerable from the stream', async () => {
+  answerGone = true
+  await startTurn()
+  turns[0].send('approval_needed', { ...CARD, subagent: null })
+  await settle()
+  await click(button('Deny'))
+  await settle()
+  expect(card().textContent).toContain('already answered or has timed out')
+  expect(button('Deny').disabled).toBe(false)
+  turns[0].send('approval_done', { id: 'a1', decision: 'timeout' })
+  turns[0].send('done', { stopReason: 'end_turn', usage })
+  await settle()
+  expect(card().textContent).toContain('No one answered in 10 minutes')
+})
+
+test('a stored turn that ended with a card unanswered says the call did not run', async () => {
+  stored = {
+    id: 'c1', title: 'x', created_at: '2026-11-27T00:00:00Z', updated_at: '2026-11-27T00:00:00Z', more: false,
+    turns: [{ id: 't1', prompt: 'go', status: 'stopped', started_at: '2026-11-27T00:00:00Z', ended_at: '2026-11-27T00:00:05Z', truncated: false,
+      events: [['approval_needed', CARD], ['stopped', {}]].map(([event, data]) => ({ event, data })) }],
+  }
+  await open('/w/w9/c/c1')
+  expect(card().textContent).toContain('The turn ended before this was answered')
+  expect(button('Allow')).toBeUndefined()
+})
+
+test('/approvals switches to yolo, the label says so, and a refused save keeps ask', async () => {
+  await open('/w/w9')
+  await typeMessage('/approvals ')
+  await settle()
+  const rows = () => [...document.querySelectorAll('[role="option"]')].map((r) => r.textContent)
+  expect(rows()).toEqual(['Ask before toolsYou approve commands, file changes and web requests firstIn use', 'YoloEvery call runs without asking'])
+  await press(messageBox(), 'ArrowDown')
+  await press(messageBox(), 'Enter')
+  await settle()
+  expect(calls.find((c) => c.method === 'PATCH')).toMatchObject({ url: '/api/agents/w9', body: { approval_mode: 'yolo' } })
+  expect(settingsLabel().textContent).toBe('claude-haiku-5-5 · yolo')
+
+  patchFails = true
+  await typeMessage('/approvals ask')
+  await settle()
+  await press(messageBox(), 'Enter')
+  await settle()
+  expect(document.body.textContent).toContain('Approvals were not changed. The service is busy.')
+  expect(settingsLabel().textContent).toBe('claude-haiku-5-5 · yolo')
+})
+
+test('Name and purpose saves the approval mode', async () => {
+  await open('/w/w9')
+  await click(byLabel('Workspace options'))
+  await click(byText('[role="menuitem"]', 'Name and purpose…'))
+  await settle()
+  const ask = document.querySelector('input[type="checkbox"]') as HTMLInputElement
+  expect(ask.checked).toBe(true)
+  await click(ask)
+  await click(button('Save'))
+  await settle()
+  expect(calls.find((c) => c.method === 'PATCH')).toMatchObject({ body: { name: 'New workspace', job: '', approval_mode: 'yolo' } })
+  expect(settingsLabel().textContent).toBe('claude-haiku-5-5 · yolo')
 })

@@ -6,7 +6,7 @@ import pytest
 from apps.accounts.services.session_service import COOKIE
 from tests.helpers.accounts import sign_in_as
 
-PUBLIC = {"/api/health", "/api/auth/login", "/api/auth/callback", "/api/auth/logout"}
+PUBLIC = {"/api/health", "/api/auth/login", "/api/auth/callback", "/api/auth/logout", "/api/mcp/oauth/client"}
 ID = "c" * 32
 
 
@@ -15,7 +15,7 @@ def test_every_route_but_the_public_ones_needs_a_session(client, fake_runner):
     paths = {p: ops for p, ops in client.get("/api/openapi.json").json()["paths"].items() if p not in PUBLIC}
     assert len(paths) >= 8
     for template, operations in paths.items():
-        path = template.replace("{agent_id}", ID).replace("{chat_id}", ID).replace("{turn_id}", ID)
+        path = template.replace("{agent_id}", ID).replace("{chat_id}", ID).replace("{turn_id}", ID).replace("{server_id}", ID)
         for method in operations:
             r = client.request(method, path, params={"path": "a.txt"}, json={"path": "a.txt", "content": "x", "prompt": "hi"})
             assert (r.status_code, r.json()["error"]["code"]) == (401, "not_signed_in"), f"{method} {template}"
@@ -54,6 +54,9 @@ def test_a_user_cannot_reach_another_users_agent(client, fake_runner):
         ("DELETE", f"/api/agents/{ws}/chats/{ID}", {}),
         ("GET", f"/api/agents/{ws}/chats/{ID}/turns/{ID}/events", {}),
         ("POST", f"/api/agents/{ws}/chats/{ID}/turns/{ID}/stop", {}),
+        ("POST", f"/api/agents/{ws}/approvals/x", {"json": {"decision": "allow"}}),
+        ("GET", f"/api/agents/{ws}/mcp-servers", {}),
+        ("PUT", f"/api/agents/{ws}/mcp-servers", {"json": {"server_ids": []}}),
     ]:
         r = client.request(method, path, **kwargs)
         assert (r.status_code, r.json()["error"]["code"]) == (404, "agent_not_found"), f"{method} {path}"

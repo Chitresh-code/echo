@@ -10,20 +10,25 @@ import { Alert, Box, Button, ButtonBase, CircularProgress, Link, Typography } fr
 import { useEffect, useRef, useState } from 'react'
 import { api, ApiError, errorText } from '../api/client'
 import { streamTurn, type PlanItem, type TurnEvent } from '../api/stream'
-import type { Usage } from '../api/types'
+import type { Agent, Usage } from '../api/types'
 import { compact } from '../format'
 import { MONO } from '../theme'
+import type { Command } from '../composer/commands'
 import { Composer, writeDraft } from '../composer/Composer'
+import { ApprovalCard, type ApprovalPart } from './ApprovalCard'
 import { Markdown } from './Markdown'
 import { SettingsLabel } from '../composer/SettingsLabel'
 import { useModelChoice } from './modelChoice'
+import { useApprovalMode } from './workspaceCommands'
 import { chatsUrl, chatUrl, INTERRUPTED, seconds, TRUNCATED, turnUrl, type ChatDetail, type StoredTurn } from './chats'
 
 // ok is missing until the call's result arrives.
 type ToolPart = { kind: 'tool'; id: string; name: string; skill?: string; detail?: string; ok?: boolean }
 // A subagent, in place of the subagent call that started it.
 type DelegatePart = { kind: 'delegate'; id: string; task: string; tools: ToolPart[]; ok?: boolean }
-type Part = { kind: 'text'; text: string } | ToolPart | DelegatePart | { kind: 'plan'; items: PlanItem[] }
+// An MCP server the turn could not use: the reason the agent was given, and for the user only, what the server said.
+type UnavailablePart = { kind: 'unavailable'; server: string; reason: string; detail: string }
+type Part = { kind: 'text'; text: string } | ToolPart | DelegatePart | { kind: 'plan'; items: PlanItem[] } | ApprovalPart | UnavailablePart
 type Message =
   | { role: 'user'; text: string }
   | { role: 'agent'; parts: Part[]; usage?: Usage; learned?: string[]; seconds?: number; error?: string; stopped?: boolean; truncated?: boolean }
@@ -77,6 +82,12 @@ export function apply(message: AgentMessage, event: TurnEvent): AgentMessage {
       return { ...message, parts: delegate(event.data.delegate, (p) => ({ ...p, tools: updateTool(p.tools, event.data.id, { ok: event.data.ok }) })) }
     case 'delegate_done':
       return { ...message, parts: delegate(event.data.id, (p) => ({ ...p, ok: event.data.ok })) }
+    case 'approval_needed':
+      return { ...message, parts: [...parts, { kind: 'approval', ...event.data }] }
+    case 'approval_done':
+      return { ...message, parts: parts.map((p) => (p.kind === 'approval' && p.id === event.data.id ? { ...p, decision: event.data.decision } : p)) }
+    case 'mcp_unavailable':
+      return { ...message, parts: [...parts, { kind: 'unavailable', ...event.data, detail: event.data.detail ?? '' }] }
     case 'done':
       return { ...message, usage: event.data.usage, learned: event.data.learned }
     case 'error':
@@ -159,6 +170,28 @@ function DelegateBlock({ part, running }: { part: DelegatePart; running: boolean
   )
 }
 
+/** A server the agent went without this turn, and why; the server's own output folds out when it left some. */
+function Unavailable({ part }: { part: UnavailablePart }) {
+  return (
+    <Box sx={{ px: 1.25, py: 0.75, borderRadius: '8px', border: 1, borderColor: 'divider', fontSize: 13 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+        <ErrorOutlined sx={{ fontSize: 15, color: 'warning.main' }} />
+        <span>
+          <Box component="span" sx={{ fontFamily: MONO, fontSize: 12 }}>{part.server}</Box> was not available: {part.reason}.
+        </span>
+      </Box>
+      {part.detail && (
+        <Box component="details" sx={{ mt: 0.5, '& summary': { cursor: 'pointer', color: 'text.secondary', fontSize: 12 } }}>
+          <summary>What the server said</summary>
+          <Box component="pre" sx={{ m: 0, mt: 0.5, p: 1, borderRadius: '6px', bgcolor: 'var(--raised)', fontFamily: MONO, fontSize: 12, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', maxHeight: 200, overflowY: 'auto' }}>
+            {part.detail}
+          </Box>
+        </Box>
+      )}
+    </Box>
+  )
+}
+
 function Plan({ items }: { items: PlanItem[] }) {
   return (
     <Box component="ul" aria-label="Plan" sx={{ m: 0, px: 1.25, py: 1, listStyle: 'none', border: 1, borderColor: 'divider', borderRadius: '8px', fontSize: 13, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
@@ -180,6 +213,9 @@ function Plan({ items }: { items: PlanItem[] }) {
 
 type Props = {
   agentId: string
+  /** The workspace, once loaded: its approval mode backs `/approvals`. */
+  agent: Agent | null
+  onAgent: (agent: Agent) => void
   /** The chat to open, or null for a new one. */
   chatId: string | null
   /** A message to send as soon as the models are known, once: the one typed on the home page. */
@@ -192,6 +228,8 @@ type Props = {
   onTurnDone: () => void
   onTitle: (name: string) => void
   onOpen: (path: string) => void
+  /** `/mcp`, whose state the workspace shares with its Name and purpose dialog. */
+  mcp?: Command
 }
 
 // Waits between attempts to follow a turn again after the connection drops: quick at first, then
@@ -204,7 +242,7 @@ const wait = (ms: number, signal: AbortSignal) =>
     signal.addEventListener('abort', () => (clearTimeout(timer), done()), { once: true })
   })
 
-export function Chat({ agentId, chatId: openedId, initial, onChatId, onMissing, onTurnStart, onTurnDone, onTitle, onOpen }: Props) {
+export function Chat({ agentId, agent, onAgent, chatId: openedId, initial, onChatId, onMissing, onTurnStart, onTurnDone, onTitle, onOpen, mcp }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState<'loading' | string | null>(openedId ? 'loading' : null)
   const [more, setMore] = useState(false)
@@ -215,6 +253,8 @@ export function Chat({ agentId, chatId: openedId, initial, onChatId, onMissing, 
   // Bumped to reopen the message box on a draft written for it.
   const [boxKey, setBoxKey] = useState(0)
   const models = useModelChoice()
+  const approvals = useApprovalMode(agent, onAgent, setNotice)
+  const commands = [...models.commands, approvals.command]
   const end = useRef<HTMLDivElement>(null)
   const sentInitial = useRef(false)
   const chatId = useRef(openedId)
@@ -437,6 +477,10 @@ export function Chat({ agentId, chatId: openedId, initial, onChatId, onMissing, 
                     <Markdown key={j} text={p.text} />
                   ) : p.kind === 'tool' ? (
                     <ToolRow key={p.id} tool={p} />
+                  ) : p.kind === 'approval' ? (
+                    <ApprovalCard key={p.id} agentId={agentId} part={p} live={i === messages.length - 1 && running} />
+                  ) : p.kind === 'unavailable' ? (
+                    <Unavailable key={`mcp-${p.server}`} part={p} />
                   ) : p.kind === 'delegate' ? (
                     <DelegateBlock key={p.id} part={p} running={i === messages.length - 1 && !!running} />
                   ) : (
@@ -456,7 +500,11 @@ export function Chat({ agentId, chatId: openedId, initial, onChatId, onMissing, 
                 )}
                 {i === messages.length - 1 && running && (
                   <Typography role="status" color="text.secondary" sx={{ fontSize: 12 }}>
-                    {reconnecting ? 'Connection lost. Reconnecting… The agent keeps working meanwhile.' : 'Working…'}
+                    {reconnecting
+                      ? 'Connection lost. Reconnecting… The agent keeps working meanwhile.'
+                      : m.parts.some((p) => p.kind === 'approval' && !p.decision)
+                        ? 'Waiting for your approval…'
+                        : 'Working…'}
                   </Typography>
                 )}
                 {m.truncated && <Typography color="text.secondary" sx={{ fontSize: 12 }}>{TRUNCATED}</Typography>}
@@ -490,8 +538,8 @@ export function Chat({ agentId, chatId: openedId, initial, onChatId, onMissing, 
           onSend={send}
           onStop={stop}
           placeholder="Give the agent a task, or type / for commands"
-          commands={models.commands}
-          footer={<SettingsLabel state={models} />}
+          commands={mcp ? [...commands, mcp] : commands}
+          footer={<SettingsLabel state={{ ...models, commands }} yolo={approvals.mode === 'yolo'} />}
         />
       </Box>
     </Box>

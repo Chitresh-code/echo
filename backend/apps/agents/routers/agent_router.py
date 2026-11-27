@@ -8,6 +8,8 @@ from apps.accounts.models.account import User
 from apps.agents.models.agent import MAX_UPLOAD_BYTES, MAX_UPLOAD_FILES, Agent, AgentFile, AgentUpdate, GitFileStatus, GitFileVersions, NewAgent, NewFolder, Process, Processes, ProcessLog, SaveFile, Tree, Uploaded, Usage
 from apps.agents.models.knowledge import Note, Skills
 from apps.credentials.models.credential import Deleted
+from apps.mcp.models.mcp_server import AgentServers, McpServer
+from apps.mcp.services import mcp_service
 from apps.agents.services import agent_service as service
 from apps.agents.services import knowledge_service
 from core.auth import current_user
@@ -45,7 +47,7 @@ async def get_agent(agent_id: OwnedAgent, user: CurrentUser, session: Db) -> Age
     return await service.get_agent(session, user.id, agent_id)
 
 
-@router.patch("/{agent_id}", summary="Rename an agent or change its job", tags=["agents"])
+@router.patch("/{agent_id}", summary="Rename an agent, change its job, or switch its approval mode", tags=["agents"])
 async def update_agent(agent_id: OwnedAgent, body: AgentUpdate, user: CurrentUser, session: Db) -> Agent:
     return await service.update_agent(session, user.id, agent_id, body)
 
@@ -54,6 +56,16 @@ async def update_agent(agent_id: OwnedAgent, body: AgentUpdate, user: CurrentUse
 async def delete_agent(agent_id: OwnedAgent, user: CurrentUser, session: Db) -> Deleted:
     await service.delete_agent(get_settings(), session, user.id, agent_id)
     return Deleted(deleted=True)
+
+
+@router.get("/{agent_id}/mcp-servers", summary="The MCP servers an agent uses", tags=["mcp"])
+async def get_mcp_servers(agent_id: OwnedAgent, user: CurrentUser, session: Db) -> list[McpServer]:
+    return await mcp_service.get_for_agent(get_settings(), session, user.id, agent_id)
+
+
+@router.put("/{agent_id}/mcp-servers", summary="Choose the MCP servers an agent uses, replacing the list", tags=["mcp"])
+async def set_mcp_servers(agent_id: OwnedAgent, body: AgentServers, user: CurrentUser, session: Db) -> list[McpServer]:
+    return await mcp_service.set_for_agent(get_settings(), session, user.id, agent_id, body)
 
 
 @router.get("/{agent_id}/usage", summary="Disk the agent's files take, and its limit", tags=["agents"])

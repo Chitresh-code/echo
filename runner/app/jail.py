@@ -147,16 +147,18 @@ def _check_env(env: Mapping[str, str] | None) -> list[str]:
 def build_argv(
     settings: Settings,
     workspace_id: str,
-    script: Path,
+    script: Path | None,
     timeout: int,
     cwd: str | None = None,
     env: Mapping[str, str] | None = None,
     lib64_exists: bool | None = None,
     fsize_mb: int = 1024,
     tty: str | None = None,
+    program: list[str] | None = None,
 ) -> list[str]:
     """`fsize_mb` is the largest file the jail may write; 0 lets it read and delete but not write.
-    `tty` is the device path of a pseudo terminal the caller opened for this jail alone."""
+    `tty` is the device path of a pseudo terminal the caller opened for this jail alone.
+    `program` is an argv run in place of the script, found on the jail's PATH and never through a shell."""
     workspace = workspace_dir(settings, workspace_id)
     home = home_dir(settings, workspace_id)
     if lib64_exists is None:
@@ -189,8 +191,6 @@ def build_argv(
     argv += [
         "-R", "/usr", "-R", "/etc",
         "-R", "/dev/null", "-R", "/dev/zero", "-R", "/dev/random", "-R", "/dev/urandom",
-        # The command file, at the same path as outside; the jail sees no other file in its directory.
-        "-R", str(script),
         "--tmpfsmount", "/tmp",
         # Same absolute path as in the sandbox container, so paths mean the same everywhere.
         "-B", str(workspace),
@@ -203,6 +203,9 @@ def build_argv(
         "-E", "GIT_AUTHOR_NAME=Echo", "-E", "GIT_AUTHOR_EMAIL=agent@echo.local",
         "-E", "GIT_COMMITTER_NAME=Echo", "-E", "GIT_COMMITTER_EMAIL=agent@echo.local",
     ]
+    if script:
+        # The command file, at the same path as outside; the jail sees no other file in its directory.
+        argv += ["-R", str(script)]
     if tty:
         # The shell keeps the caller's session, whose controlling terminal is the pseudo terminal
         # opened for this jail, so job control and Ctrl+C work. The usual risk of skipping setsid,
@@ -224,8 +227,12 @@ def build_argv(
     # jail of a workspace shares its loopback and its route out.
     # shortcut: outbound is open to any public address; abuse controls (rate limits, blocked ports) come with hardening.
     argv.append("--disable_clone_newnet")
-    # The command is only ever read by the shell inside the jail, never parsed outside it.
-    argv += ["--", "/bin/sh", str(script)]
+    if program:
+        # env looks the program up on the jail's PATH, as a shell would, without parsing anything.
+        argv += ["--", "/usr/bin/env", "--", *program]
+    else:
+        # The command is only ever read by the shell inside the jail, never parsed outside it.
+        argv += ["--", "/bin/sh", str(script)]
     return argv
 
 

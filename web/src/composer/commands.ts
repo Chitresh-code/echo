@@ -19,6 +19,8 @@ export type Command = {
   options: (query: string) => CommandOption[]
   /** Applies a picked row. Returns what to tell a screen reader, or null to keep the menu open (a Retry row, say). */
   apply: (option: CommandOption) => string | null
+  /** Picking a row says what happened but leaves the menu open, for picking several in a row. */
+  keepOpen?: boolean
 }
 
 export const matches = (text: string, query: string) => text.toLowerCase().includes(query.trim().toLowerCase())

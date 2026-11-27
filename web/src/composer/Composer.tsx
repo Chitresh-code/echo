@@ -101,8 +101,8 @@ export function Composer({ draftKey, disabled = false, busy = false, onSend, onS
     } else if (parsed.kind === 'options') {
       const line = parsed.command.apply(row)
       if (line === null) return
-      ed.chain().focus().deleteRange(slash.range).run()
       setSaid(line)
+      if (!parsed.command.keepOpen) ed.chain().focus().deleteRange(slash.range).run()
     }
   }
 

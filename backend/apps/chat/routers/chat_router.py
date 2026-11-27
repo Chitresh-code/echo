@@ -4,16 +4,17 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from apps.chat.models.chat import Chat, ChatDetail, ChatList, StopResult, TurnRequest
+from apps.chat.models.chat import ApprovalAnswer, Chat, ChatDetail, ChatList, StopResult, TurnRequest
 from apps.agents.models.agent import DEFAULT_NAME
 from apps.agents.services import titles
-from apps.chat.services import agent_factory, chat_service, turn_service
+from apps.chat.services import agent_factory, approvals, chat_service, turn_service
 from apps.chat.services.sse import message
 from apps.credentials.models.credential import Deleted
 from apps.credentials.services import credential_service, providers
 from apps.agents.repositories import agents
 from apps.agents.routers.agent_router import CurrentUser, Db, OwnedAgent
 from apps.agents.services import knowledge_service
+from apps.mcp.services import connect, mcp_service
 from core.auth import current_user
 from core.config import get_settings
 from core.errors import AppError
@@ -86,6 +87,19 @@ async def stop_turn(agent_id: OwnedAgent, chat_id: str, turn_id: str, session: D
     return StopResult(stopping=True)
 
 
+@router.post(
+    "/api/agents/{agent_id}/approvals/{approval_id}",
+    summary="Answer a tool call that waits for your approval",
+    description="`allow` runs the call, `deny` refuses it, and `always` runs it and every later call of the same tool in this chat. "
+    "The turn's stream then sends `approval_done`. 404 `approval_not_found` when no call of yours waits under that id.",
+    tags=["chat"],
+)
+async def answer_approval(agent_id: OwnedAgent, approval_id: str, body: ApprovalAnswer, user: CurrentUser) -> ApprovalAnswer:
+    if not approvals.answer(approval_id, agent_id, user.id, body.decision):
+        raise AppError(404, "approval_not_found", "Nothing is waiting for that approval. It may have been answered already or timed out.")
+    return body
+
+
 def _stream(events) -> StreamingResponse:
     # No buffering by a proxy, so events reach the browser as they happen.
     return StreamingResponse(events, media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
@@ -120,6 +134,8 @@ async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user:
     # Read per turn, so a rename, a new job or a broken skill reaches the very next message.
     agent = await agents.get(session, agent_id, user.id)
     needs_fixing = [s for s in (await knowledge_service.list_skills(settings, agent_id)).skills if s.status != "ok"]
+    # Started by the turn, not here, so the stream begins at once and a slow server shows in it.
+    servers = await mcp_service.turn_servers(settings, session, agent_id, user.id)
     side_tasks = []
     # A workspace started from a message alone: named from the message at once, so the list shows
     # something during the turn, then by the side model's title when it comes back.
@@ -134,8 +150,9 @@ async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user:
             request.app.state.chat_writer,
             agent_id,
             chat_id,
-            lambda delegation: agent_factory.build_agent(
-                settings, agent_id, chat_id, model, f"{credential.provider}/{body.model}", side_model, agent.name, agent.job, needs_fixing, delegation=delegation
+            lambda delegation, gate, mcp: agent_factory.build_agent(
+                settings, agent_id, chat_id, model, f"{credential.provider}/{body.model}", side_model, agent.name, agent.job, needs_fixing,
+                delegation=delegation, approvals=gate, mcp=mcp,
             ),
             body.prompt,
             settings.turn_timeout,
@@ -146,6 +163,8 @@ async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user:
             user_id=user.id,
             max_running=settings.max_running_turns,
             side_tasks=side_tasks,
+            approval_mode=agent.approval_mode,
+            mcp=connect.TurnMcp(servers, user.id, agent_id) if servers else None,
         )
     except turn_service.TurnRefused as refused:
         # Another request claimed the chat or the last slot while this one awaited the database.

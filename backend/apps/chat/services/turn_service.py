@@ -3,6 +3,7 @@ whether or not a page is reading it. Each running turn keeps what it has shown i
 page can attach and replay it from the start, and queues the same events to be stored."""
 
 import asyncio
+import contextlib
 import json
 import logging
 import threading
@@ -15,15 +16,21 @@ from strands import Agent
 
 from apps.agents.services.knowledge_service import changed_skills
 from apps.chat.repositories import chats
+from apps.chat.services.approvals import Approvals, Mode
 from apps.chat.services.delegation import Delegation
 from apps.chat.services.recorder import Writer
 from apps.chat.services.sse import done_data, message, parse, to_sse
+from apps.mcp.services import mcp_service
+from apps.mcp.services.connect import TurnMcp
+from core.config import get_settings
 from core.request_id import current
 
 logger = logging.getLogger(__name__)
 
 # Path to checksum of every file under the workspace's skills folder.
 Snapshot = Callable[[], Awaitable[dict[str, str]]]
+# Builds the turn's agent with its subagent reporter, its approval gate and its started MCP servers.
+MakeAgent = Callable[[Delegation, Approvals, TurnMcp | None], Agent]
 # Work that runs beside a turn and may report one event, such as naming a new workspace.
 SideTask = Callable[[], Awaitable[str | None]]
 
@@ -62,6 +69,7 @@ class LiveTurn:
     cancel: threading.Event = field(default_factory=threading.Event)
     task: asyncio.Task | None = None
     side: list[asyncio.Task] = field(default_factory=list)
+    gate: Approvals | None = None
     # Why the turn was ended from outside: "stopped" by a user or "interrupted" by shutdown.
     ended_by: str | None = None
     ended: asyncio.Event = field(default_factory=asyncio.Event)
@@ -159,18 +167,27 @@ async def _hashes(snapshot: Snapshot | None) -> dict[str, str] | None:
 
 
 async def _run(
-    make_agent: Callable[[Delegation], Agent], prompt: str, timeout: int, cancel: threading.Event, queue: asyncio.Queue, snapshot: Snapshot | None
+    make_agent: MakeAgent, prompt: str, timeout: int, cancel: threading.Event, queue: asyncio.Queue, snapshot: Snapshot | None, gate: Approvals,
+    mcp: TurnMcp | None = None, save_mcp: Callable[[dict], None] = lambda changes: None,
 ) -> None:
     seen_tools: set[str] = set()
     loop = asyncio.get_running_loop()
     # Subagents can report from the harness's background thread.
     delegation = Delegation(lambda sse: loop.call_soon_threadsafe(queue.put_nowait, sse))
+    gate.delegation = delegation
     try:
-        async with asyncio.timeout(timeout):
+        async with asyncio.timeout(timeout) as limit:
+            # Time spent waiting for the user's approval does not count against the turn.
+            gate.extend = lambda seconds: loop.call_soon_threadsafe(_push_back, limit, seconds)
             before = await _hashes(snapshot)
             done = None
+            if mcp is not None:
+                # Inside the time limit: a server slow to start uses up the turn's time like any other step.
+                for gone in await mcp.start():
+                    await queue.put(message("mcp_unavailable", {"server": gone.name, "reason": gone.reason, "detail": gone.detail}))
+                gate.mcp_tools = mcp.tool_info()
             # Leaving the block shuts the agent down, which saves pending memory.
-            async with make_agent(delegation) as agent:
+            async with make_agent(delegation, gate, mcp) as agent:
                 async for event in agent.stream_async(prompt, cancel_signal=cancel):
                     if "result" in event:
                         # Held until the skills are compared, so done stays the last event.
@@ -191,7 +208,19 @@ async def _run(
         logger.exception("Turn failed")
         await queue.put(message("error", {"code": "turn_failed", "message": "The turn failed. The server log has the details under this request id.", "request_id": current()}))
     finally:
+        if mcp is not None:
+            # However the turn ended, so no server connection outlives it.
+            await mcp.stop()
+            if mcp.changes:
+                save_mcp(mcp.changes)
         await queue.put(None)
+
+
+def _push_back(limit: asyncio.Timeout, seconds: float) -> None:
+    # A wait can end after the turn's time block has closed; then there is nothing left to move.
+    with contextlib.suppress(RuntimeError):
+        if (when := limit.when()) is not None:
+            limit.reschedule(when + seconds)
 
 
 async def _side(work: SideTask, queue: asyncio.Queue) -> None:
@@ -206,7 +235,7 @@ def start_turn(
     writer: Writer,
     agent_id: str,
     chat_id: str,
-    make_agent: Callable[[Delegation], Agent],
+    make_agent: MakeAgent,
     prompt: str,
     timeout: int,
     *,
@@ -217,6 +246,8 @@ def start_turn(
     user_id: str = "",
     max_running: int | None = None,
     side_tasks: Sequence[SideTask] = (),
+    approval_mode: Mode = "ask",
+    mcp: TurnMcp | None = None,
 ) -> LiveTurn:
     """Starts a turn that runs until it ends, is stopped or the api shuts down. Its rows are only
     queued, never awaited, so the stream starts at once."""
@@ -233,7 +264,10 @@ def start_turn(
     writer.put(lambda db: chats.seen(db, agent_id, chat_id, title, now))
     writer.put(lambda db: chats.add_turn(db, row))
     queue: asyncio.Queue = asyncio.Queue()
-    turn.task = asyncio.create_task(_run(make_agent, prompt, timeout, turn.cancel, queue, snapshot))
+    loop = asyncio.get_running_loop()
+    turn.gate = Approvals(agent_id, user_id, approval_mode, lambda sse: loop.call_soon_threadsafe(queue.put_nowait, sse))
+    save_mcp = lambda changes: writer.put(mcp_service.save_changes(get_settings(), user_id, changes))  # noqa: E731
+    turn.task = asyncio.create_task(_run(make_agent, prompt, timeout, turn.cancel, queue, snapshot, turn.gate, mcp, save_mcp))
     # A task cancelled before it first runs never reaches _run's finally; this ends the pump anyway (a second None is skipped).
     turn.task.add_done_callback(lambda _: queue.put_nowait(None))
     # Not cancelled with the turn: each bounds its own time, and its result (a workspace's name)
@@ -301,6 +335,8 @@ async def _pump(turn: LiveTurn, queue: asyncio.Queue, writer: Writer) -> None:
     finally:
         turn.ended_at = datetime.now(UTC)
         _release(turn.user_id)
+        if turn.gate:
+            turn.gate.close()
         # Side work still running reports before the turn closes, so its event can come after done.
         try:
             await asyncio.gather(*turn.side)
@@ -342,6 +378,9 @@ def stop(turn: LiveTurn, reason: str = "stopped") -> None:
     logger.info("Turn %s: %s", reason, turn.id)
     turn.ended_by = reason
     turn.cancel.set()
+    if turn.gate:
+        # Subagents wait on another thread, which cancelling the task does not reach.
+        turn.gate.deny_all()
     if turn.task:
         turn.task.cancel()
 

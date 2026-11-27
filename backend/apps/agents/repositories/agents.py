@@ -17,12 +17,13 @@ agents = sa.Table(
     sa.Column("job", sa.String),
     sa.Column("created_at", sa.DateTime(timezone=True)),
     sa.Column("last_used_at", sa.DateTime(timezone=True)),
+    sa.Column("approval_mode", sa.String),
 )
-_FIELDS = (agents.c.id, agents.c.name, agents.c.job, agents.c.created_at, agents.c.last_used_at)
+_FIELDS = (agents.c.id, agents.c.name, agents.c.job, agents.c.created_at, agents.c.last_used_at, agents.c.approval_mode)
 
 
-async def add(db: AsyncSession, agent_id: str, owner_id: str, name: str = DEFAULT_NAME, job: str = "") -> Agent:
-    row = {"id": agent_id, "name": name, "job": job, "created_at": datetime.now(UTC), "last_used_at": None}
+async def add(db: AsyncSession, agent_id: str, owner_id: str, name: str = DEFAULT_NAME, job: str = "", approval_mode: str = "ask") -> Agent:
+    row = {"id": agent_id, "name": name, "job": job, "created_at": datetime.now(UTC), "last_used_at": None, "approval_mode": approval_mode}
     await db.execute(agents.insert().values(owner_id=owner_id, **row))
     return Agent(**row)
 

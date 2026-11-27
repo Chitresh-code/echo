@@ -61,4 +61,23 @@ describe('apply', () => {
     const m = { role: 'agent' as const, parts: [] }
     expect(apply(m, { event: 'title', data: { name: 'Flaky test fix' } })).toBe(m)
   })
+
+  it('adds an approval card and marks it answered', () => {
+    const request = { id: 'a1', tool: 'shell', server: null, hints: null, subagent: null, input: { command: 'ls' } }
+    let m = apply({ role: 'agent', parts: [] }, { event: 'approval_needed', data: request })
+    m = apply(m, { event: 'approval_done', data: { id: 'a1', decision: 'deny' } })
+    m = apply(m, { event: 'approval_done', data: { id: 'other', decision: 'allow' } })
+    expect(m.parts).toEqual([{ kind: 'approval', ...request, decision: 'deny' }])
+  })
+})
+
+describe('mcp_unavailable', () => {
+  it('becomes a line with the reason and, for the user, the detail', () => {
+    let m = apply({ role: 'agent', parts: [] }, { event: 'mcp_unavailable', data: { server: 'notes', reason: 'it exited while starting', detail: 'no module named x' } })
+    m = apply(m, { event: 'mcp_unavailable', data: { server: 'old', reason: 'it needs connecting in Connectors' } })
+    expect(m.parts).toEqual([
+      { kind: 'unavailable', server: 'notes', reason: 'it exited while starting', detail: 'no module named x' },
+      { kind: 'unavailable', server: 'old', reason: 'it needs connecting in Connectors', detail: '' },
+    ])
+  })
 })

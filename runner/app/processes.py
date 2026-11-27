@@ -121,6 +121,8 @@ class Registry:
         self.table: dict[str, dict[str, Process]] = {}
         # Held from the limit check to the process being in the table, so two starts cannot both pass.
         self.lock = asyncio.Lock()
+        # Other jails that count against the sandbox-wide limit (local MCP servers), checked under the same lock.
+        self.others = lambda: 0
 
     def running_count(self, workspace_id: str | None = None) -> int:
         tables = [self.table.get(workspace_id, {})] if workspace_id else self.table.values()
@@ -147,7 +149,7 @@ class Registry:
                 raise jail.JailError("process_exists", f"A process named {name} is already running.", 409)
             if self.running_count(workspace_id) >= self.settings.max_processes_per_workspace:
                 raise jail.JailError("too_many_processes", f"An agent can run at most {self.settings.max_processes_per_workspace} processes; stop one first.", 429)
-            if self.running_count() >= self.settings.max_processes:
+            if self.running_count() + self.others() >= self.settings.max_processes:
                 raise jail.JailError("too_many_processes", "The sandbox is running as many processes as it can; try again later.", 429)
             argv, script = await argv_for(self.settings.process_timeout)
             folder = logs_dir(self.settings, workspace_id)

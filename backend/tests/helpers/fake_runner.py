@@ -52,6 +52,12 @@ class FakeRunner:
         # the frame "exit".
         self.terminals: dict[str, list[dict]] = {}
         self.terminal_frames: list[str] = []
+        # Local MCP servers: each start runs its command for real (tests give a Python script), the
+        # start requests as received, every message sent to a server, and the sessions deleted.
+        self.mcp: dict[str, asyncio.subprocess.Process] = {}
+        self.mcp_starts: list[dict] = []
+        self.mcp_sent: list[dict] = []
+        self.mcp_deleted: list[str] = []
 
     def _app(self) -> FastAPI:
         app = FastAPI()
@@ -159,6 +165,66 @@ class FakeRunner:
                     await ws.send_bytes(b"got:" + text.encode())
             except WebSocketDisconnect:
                 self.closed.set()
+
+        def no_session():
+            return JSONResponse(status_code=404, content={"success": False, "error": {"code": "mcp_session_not_found", "message": "There is no MCP session with this id.", "details": None}})
+
+        @app.post("/workspaces/{workspace_id}/mcp")
+        async def start_mcp(workspace_id: str, request: Request):
+            body = await request.json()
+            self.mcp_starts.append({"workspace_id": workspace_id, **body})
+            if self.error:
+                return JSONResponse(status_code=self.error[0], content=self.error[1])
+            proc = await asyncio.create_subprocess_exec(
+                body["command"], *body["args"], stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            )
+            session_id = f"{len(self.mcp_starts):032x}"
+            self.mcp[session_id] = proc
+            return {"success": True, "data": {"id": session_id}}
+
+        @app.get("/workspaces/{workspace_id}/mcp/{session_id}/messages")
+        async def mcp_messages(workspace_id: str, session_id: str):
+            proc = self.mcp.get(session_id)
+            if proc is None:
+                return no_session()
+
+            async def stream():
+                try:
+                    while line := await proc.stdout.readline():
+                        yield (json.dumps({"message": json.loads(line)}) + "\n").encode()
+                    code = await proc.wait()
+                    yield (json.dumps({"exit": code, "stderr": (await proc.stderr.read()).decode()[-2000:]}) + "\n").encode()
+                finally:
+                    if proc.returncode is None:
+                        proc.kill()
+                        await proc.wait()
+                    self.mcp.pop(session_id, None)
+                    self.closed.set()
+
+            return StreamingResponse(stream(), media_type="application/x-ndjson")
+
+        @app.post("/workspaces/{workspace_id}/mcp/{session_id}/messages")
+        async def mcp_send(workspace_id: str, session_id: str, request: Request):
+            proc = self.mcp.get(session_id)
+            if proc is None:
+                return no_session()
+            message = await request.json()
+            self.mcp_sent.append(message)
+            if proc.returncode is not None:
+                return JSONResponse(status_code=409, content={"success": False, "error": {"code": "mcp_session_ended", "message": "The MCP server has exited.", "details": None}})
+            proc.stdin.write(json.dumps(message).encode() + b"\n")
+            await proc.stdin.drain()
+            return {"success": True, "data": {"sent": True}}
+
+        @app.delete("/workspaces/{workspace_id}/mcp/{session_id}")
+        async def stop_mcp(workspace_id: str, session_id: str):
+            self.mcp_deleted.append(session_id)
+            proc = self.mcp.pop(session_id, None)
+            if proc is None:
+                return no_session()
+            if proc.returncode is None:
+                proc.kill()
+            return {"success": True, "data": {"deleted": True}}
 
         @app.post("/workspaces/{workspace_id}/exec")
         async def exec_command(workspace_id: str, request: Request):

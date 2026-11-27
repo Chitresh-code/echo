@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 from strands_harness.types.agent import Effort
 
@@ -65,3 +67,8 @@ class ChatDetail(ChatSummary):
 class StopResult(BaseModel):
     # False when the turn had already ended, so there was nothing to stop.
     stopping: bool
+
+
+class ApprovalAnswer(BaseModel):
+    # "always" allows this call and every later call of the same tool in this chat.
+    decision: Literal["allow", "deny", "always"]

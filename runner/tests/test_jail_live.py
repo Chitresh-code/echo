@@ -508,3 +508,30 @@ def test_terminal_is_a_jailed_shell_with_job_control(client, live_settings):
         type_(sock, "python3 -m http.server 8131 --bind 127.0.0.1\r")
         assert _wait_for_port(client, ws, 8131)["processes"] == []
     client.delete(f"/workspaces/{ws}/terminals/{tid}")
+
+
+def test_local_mcp_server_runs_in_the_jail(client, live_settings, local_server):
+    ws = new_ws(client)
+    # A stdio server that answers one probe of the network and its identity, then exits.
+    script = (
+        "import json, os, socket, sys\n"
+        "for line in sys.stdin:\n"
+        "    m = json.loads(line)\n"
+        "    if m['method'] == 'exit': sys.exit(0)\n"
+        "    try:\n"
+        "        socket.create_connection((m['params']['host'], 18080), 3).close(); reached = True\n"
+        "    except OSError:\n"
+        "        reached = False\n"
+        "    print(json.dumps({'id': m['id'], 'result': {'reached': reached, 'uid': os.getuid(), 'cwd': os.getcwd(), 'key': os.environ.get('API_KEY')}}), flush=True)\n"
+    )
+    run(client, ws, f"cat > server.py <<'PY'\n{script}PY")
+    sid = client.post(f"/workspaces/{ws}/mcp", json={"command": "python3", "args": ["server.py"], "env": {"API_KEY": "k"}}).json()["data"]["id"]
+    base = f"/workspaces/{ws}/mcp/{sid}/messages"
+    for i, host in enumerate(["127.0.0.1", _own_ip()]):
+        assert client.post(base, json={"id": i, "method": "probe", "params": {"host": host}}).status_code == 200
+    client.post(base, json={"id": 9, "method": "exit"})
+    lines = [json.loads(line) for line in client.get(base).iter_lines() if line]
+    results = [line["message"]["result"] for line in lines if "message" in line]
+    assert [r["reached"] for r in results] == [False, False]
+    assert results[0]["uid"] == jail.JAIL_UID and results[0]["key"] == "k" and results[0]["cwd"] == str(jail.workspace_dir(live_settings, ws))
+    assert lines[-1]["exit"] == 0

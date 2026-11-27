@@ -2,6 +2,7 @@
 touches the network."""
 
 import httpcore
+import httpcore2
 import pytest
 
 from apps.credentials.services import providers, safe_http
@@ -29,12 +30,17 @@ def dns(monkeypatch):
 
     monkeypatch.setattr(safe_http, "_getaddrinfo", getaddrinfo)
     monkeypatch.setattr(httpcore.AnyIOBackend, "connect_tcp", connect_tcp)
+    monkeypatch.setattr(httpcore2.AnyIOBackend, "connect_tcp", connect_tcp)
     return State
 
 
-async def fetch():
-    async with safe_http.client() as client:
-        await client.get("https://endpoint.example/v1/models")
+# Both guarded clients: httpx for the model SDKs, httpx2 for the MCP SDK.
+@pytest.fixture(params=["client", "client2"])
+def fetch(request):
+    async def fetch():
+        async with getattr(safe_http, request.param)() as client:
+            await client.get("https://endpoint.example/v1/models")
+    return fetch
 
 
 @pytest.mark.parametrize("answer", [
@@ -42,7 +48,7 @@ async def fetch():
     ["0.0.0.0"], ["224.0.0.1"], ["::1"], ["::ffff:127.0.0.1"], ["fe80::1%eth0"], ["fd00::1"],
     ["93.184.216.34", "10.0.0.5"], [],
 ])
-async def test_local_and_private_addresses_are_refused(dns, answer):
+async def test_local_and_private_addresses_are_refused(dns, fetch, answer):
     dns.answer = answer
     with pytest.raises(safe_http.EndpointNotAllowed):
         await fetch()
@@ -50,16 +56,40 @@ async def test_local_and_private_addresses_are_refused(dns, answer):
 
 
 @pytest.mark.parametrize("answer", [["93.184.216.34"], ["2606:2800:220:1:248:1893:25c8:1946"]])
-async def test_a_public_address_is_connected_to_as_checked(dns, answer):
+async def test_a_public_address_is_connected_to_as_checked(dns, fetch, answer):
     dns.answer, dns.connected = answer, []
     with pytest.raises(Connected):
         await fetch()
     assert dns.connected == answer[:1]
 
 
-def test_no_proxies_and_no_redirects():
-    client = safe_http.client()
+@pytest.mark.parametrize("make", [safe_http.client, safe_http.client2])
+def test_no_proxies_and_no_redirects(make):
+    client = make()
     assert client.follow_redirects is False and client._trust_env is False
+
+
+def test_client2_carries_the_headers_and_auth_it_is_given():
+    import httpx2
+    auth = httpx2.BasicAuth("u", "p")
+    client = safe_http.client2(headers={"X-Api-Key": "k"}, auth=auth)
+    assert client.headers["X-Api-Key"] == "k" and client.auth is auth
+
+
+def test_refused_finds_the_error_inside_exception_groups_and_chains():
+    try:
+        try:
+            raise safe_http.EndpointNotAllowed("10.0.0.1")
+        except Exception as inner:
+            raise RuntimeError("connect failed") from inner
+    except RuntimeError as chained:
+        wrapped = ExceptionGroup("task group", [ValueError("other"), ExceptionGroup("nested", [chained])])
+    assert safe_http.refused(wrapped)
+    assert not safe_http.refused(ExceptionGroup("task group", [ValueError("other")]))
+    looped = RuntimeError("a")
+    looped.__context__ = RuntimeError("b")
+    looped.__context__.__context__ = looped
+    assert not safe_http.refused(looped)
 
 
 async def test_a_refused_endpoint_maps_to_its_own_error_through_the_sdk(dns):

@@ -208,7 +208,9 @@ def test_busy_chat_is_409(client, user, fake_runner):
 
 
 def agent_maker(model):
-    return lambda delegation: agent_factory.build_agent(get_settings(), WS, CHAT, model, "anthropic/claude-sonnet-5-5", model, "Test agent", "", delegation=delegation)
+    return lambda delegation, gate, mcp=None: agent_factory.build_agent(
+        get_settings(), WS, CHAT, model, "anthropic/claude-sonnet-5-5", model, "Test agent", "", delegation=delegation, approvals=gate
+    )
 
 
 async def wait_for(condition, seconds=5):
@@ -218,6 +220,7 @@ async def wait_for(condition, seconds=5):
 
 
 def start(chat, make_agent, timeout=60, **extra):
+    extra.setdefault("approval_mode", "yolo")
     return turn_service.start_turn(FakeWriter(), WS, chat, make_agent, "go", timeout, title="go", **extra)
 
 
@@ -274,7 +277,7 @@ async def test_a_racing_second_turn_is_refused(fake_runner):
 
 
 async def test_failure_becomes_an_error_event_without_its_text(fake_runner):
-    def explode(delegation):
+    def explode(delegation, gate, mcp=None):
         raise RuntimeError("provider said: key sk-secret-123 is invalid")
 
     events = [e async for e in turn_service.subscribe(start("6" * 32, explode))]
@@ -374,7 +377,7 @@ async def test_running_turns_are_counted_per_user_and_released(fake_runner):
 
 
 async def test_a_failed_turn_releases_its_slot(fake_runner):
-    def explode(delegation):
+    def explode(delegation, gate, mcp=None):
         raise RuntimeError("boom")
 
     [e async for e in turn_service.subscribe(start("a1" * 16, explode, user_id="u3", max_running=1))]

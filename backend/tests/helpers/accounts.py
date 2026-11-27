@@ -33,14 +33,15 @@ def sign_in_as(client, name: str = "ada") -> str:
     return user_id
 
 
-def own(client, user_id: str, agent_id: str) -> None:
+def own(client, user_id: str, agent_id: str, approval_mode: str = "yolo") -> None:
     """Record `user_id` as the owner of an agent, as creating it through the API would. A test
-    that restarts the app signs in again, so an earlier owner is replaced."""
+    that restarts the app signs in again, so an earlier owner is replaced. Yolo unless asked, so a
+    scripted turn's tool calls run without waiting for an approval."""
 
     async def work(db):
         await db.execute(agents.agents.delete().where(agents.agents.c.id == agent_id))
         # Named, as a workspace that was never named gets titled on its first turn.
-        await agents.add(db, agent_id, user_id, "Test agent")
+        await agents.add(db, agent_id, user_id, "Test agent", approval_mode=approval_mode)
 
     _run(client, work)
 

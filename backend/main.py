@@ -3,24 +3,29 @@ from pathlib import Path
 from fastapi import Depends, FastAPI
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
+from starlette.middleware.sessions import SessionMiddleware
 
 from apps.accounts.routers.auth_router import router as auth_router
 from apps.accounts.services.oidc import state_cookie_key
 from apps.agents.routers.agent_router import router as agent_router
 from apps.chat.routers.chat_router import router as chat_router
 from apps.credentials.routers.credential_router import router as credential_router
+from apps.mcp.routers.mcp_router import oauth_router as mcp_oauth_router
+from apps.mcp.routers.mcp_router import router as mcp_router
 from apps.preview.routers.preview_router import router as preview_router
-from apps.terminal.routers.terminal_router import router as terminal_router, socket_router as terminal_socket_router
+from apps.terminal.routers.terminal_router import router as terminal_router
+from apps.terminal.routers.terminal_router import (
+    socket_router as terminal_socket_router,
+)
 from core.auth import check_origin
 from core.config import get_settings
 from core.error_handlers import register_error_handlers
 from core.log_config import setup_logging
-from core.request_id import RequestIdMiddleware
 from core.preview_host import PreviewHostMiddleware
-from core.web_app import WebHeadersMiddleware, csp, serve_web_app
+from core.request_id import RequestIdMiddleware
 from core.responses import EnvelopeJSONResponse
+from core.web_app import WebHeadersMiddleware, csp, serve_web_app
 from lifespan import lifespan
 
 # The user guide, plain HTML kept at the repo root next to the backend, and the built browser app.
@@ -66,6 +71,8 @@ def create_app(web_dir: Path | None = None) -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(credential_router)
+    app.include_router(mcp_router)
+    app.include_router(mcp_oauth_router)
     app.include_router(agent_router)
     app.include_router(chat_router)
     app.include_router(preview_router)

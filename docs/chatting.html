@@ -30,6 +30,8 @@
       <a href="chatting.html" aria-current="page">Chatting</a>
       <a href="files.html">Files and changes</a>
       <a href="keys.html">Model keys</a>
+      <a href="mcp.html">Connectors</a>
+      <a href="approvals.html">Tool approvals</a>
       <p>Running Echo</p>
       <a href="install.html">Install and set up</a>
       <a href="data.html">Data and backups</a>
@@ -47,7 +49,8 @@
       <ul>
         <li><b>/model</b> lists the models of each of your keys, grouped by key, with a tick on the one in use. Type part of a name to find it, for example <code>/model mini</code>. Without a key, it offers to open Credentials.</li>
         <li><b>/effort</b> sets how hard the model thinks. <b>auto</b> uses the level recommended for the model and <b>off</b> skips extra thinking. Higher levels help with hard tasks but are slower and cost more. Keys for an OpenAI-compatible service take only auto.</li>
-      </ul>
+
+        <li><b>/approvals</b> switches between asking before tools and Yolo, and <b>/mcp</b> turns your MCP servers on or off for the workspace.</li>      </ul>
       <p>The model and effort the next message uses show in small text in the corner of the message box. Click it to choose from the same lists with a search field, which is handy on a phone. A message that is only a command is never sent, while a line that starts with a slash but is not a command, such as <code>/etc/hosts is missing</code>, is sent as written.</p>
       <p><kbd>Enter</kbd> sends and <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line. In a code block <kbd>Enter</kbd> adds a line, and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on a Mac) sends from anywhere. Your browser remembers the model and effort you chose. You can switch to another model or provider at any message, and the new model sees the whole conversation so far.</p>
 
@@ -85,6 +88,7 @@
       <h2 id="what-it-can-do">What the agent can do</h2>
       <p>It runs shell commands, reads, writes and edits files, fetches web pages, uses the provider's web search where there is one, loads its skills and searches its notes. When a task changes files it saves them to the workspace's history, and it ends each reply with what it changed, how it checked it and anything it could not do.</p>
       <p>It stays on its job. It still helps with something outside it, but says so.</p>
+      <p>In the default Ask mode, a command, a file change, a web request or an MCP server's tool waits on a card in the reply until you allow or deny it. See <a href="approvals.html">Tool approvals</a>, and <b>/approvals</b> to let it work without asking. With <a href="mcp.html">Connectors</a> it also uses tools from your other services; <b>/mcp</b> picks the ones a workspace uses, and a server it could not use shows as a line in the reply saying why.</p>
       <div class="tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><p>Web pages, files and command output are information to the agent, never instructions. If something it reads tells it to do something you did not ask for, it does not do it, and tells you.</p></div>
       <p>Links in the agent's replies open in a new tab. Images from other sites show as links and are never loaded, so a page the agent read cannot make your browser send data elsewhere.</p>
 

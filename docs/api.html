@@ -30,6 +30,8 @@
       <a href="chatting.html">Chatting</a>
       <a href="files.html">Files and changes</a>
       <a href="keys.html">Model keys</a>
+      <a href="mcp.html">Connectors</a>
+      <a href="approvals.html">Tool approvals</a>
       <p>Running Echo</p>
       <a href="install.html">Install and set up</a>
       <a href="data.html">Data and backups</a>
@@ -83,7 +85,8 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
       <p><code>name</code> is 1 to 80 characters and <code>job</code> up to 500. Both are optional: without a name the workspace is called "New workspace" until its first message names it, which the turn reports as a <code>title</code> event.</p>
       <ul>
         <li><code>GET /api/agents</code> lists your agents, most recently used first.</li>
-        <li><code>GET /api/agents/{id}</code> returns one, and <code>PATCH /api/agents/{id}</code> with <code>name</code> or <code>job</code> changes it.</li>
+        <li><code>GET /api/agents/{id}</code> returns one, and <code>PATCH /api/agents/{id}</code> with <code>name</code>, <code>job</code> or <code>approval_mode</code> changes it. <code>approval_mode</code> is <code>ask</code> (the default: tool calls that change something or reach outside the workspace wait for an answer) or <code>yolo</code> (nothing waits), and can also be given when the agent is created.</li>
+        <li><code>GET /api/agents/{id}/mcp-servers</code> lists the MCP servers the agent uses, and <code>PUT</code> with <code>{"server_ids": [...]}</code> replaces the set, at most 10 (<code>too_many_mcp_servers</code>). An id that is not one of your servers answers <code>mcp_server_not_found</code>.</li>
         <li><code>GET /api/agents/{id}/skills</code> lists its skills with their description and <code>status</code>: <code>ok</code>, <code>warning</code> or <code>skipped</code>, with the <code>problem</code>.</li>
         <li><code>GET /api/agents/{id}/notes</code> lists its notes, newest first, and <code>DELETE /api/agents/{id}/notes/{name}</code> forgets one. A missing note answers <code>note_not_found</code>.</li>
         <li><code>GET /api/agents/{id}/usage</code> returns <code>used_bytes</code> and <code>limit_bytes</code> for its files and home.</li>
@@ -133,6 +136,33 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
         <dt><code>terminal_not_found</code></dt><dd>The terminal has ended.</dd>
       </dl>
 
+      <h2 id="mcp">MCP servers</h2>
+      <p>Your MCP servers, which agents use for tools from outside their workspace. A remote server is reached at an <code>https</code> address:</p>
+      <pre><code>curl -b "$ECHO" -X POST http://localhost:8000/api/mcp-servers \
+  -H 'content-type: application/json' \
+  -d '{"name": "sentry", "kind": "remote", "url": "https://mcp.sentry.dev/mcp",
+       "auth": "headers", "headers": {"Authorization": "Bearer your token"}}'</code></pre>
+      <p>A local server is a command run in each agent's workspace that uses it:</p>
+      <pre><code>curl -b "$ECHO" -X POST http://localhost:8000/api/mcp-servers \
+  -H 'content-type: application/json' \
+  -d '{"name": "everything", "kind": "local", "command": "npx",
+       "args": ["-y", "@modelcontextprotocol/server-everything"], "env": {}}'</code></pre>
+      <p><code>name</code> is a lowercase letter, then up to 19 lowercase letters, digits or underscores, unique among your servers; it prefixes the server's tools, as in <code>sentry_search_issues</code>. <code>auth</code> is <code>none</code>, <code>headers</code> or <code>oauth</code>, the last with an optional <code>client_id</code> and <code>client_secret</code> from the provider. Header and environment values are stored encrypted and only their names come back, in <code>header_names</code> and <code>env_names</code>. A remote server with no sign-in or with headers is connected when added and returned with its <code>tools</code>; a local one lists its tools on the first turn that uses it.</p>
+      <ul>
+        <li><code>GET /api/mcp-servers</code> lists your servers with their <code>status</code>: <code>ok</code>, <code>needs_auth</code>, <code>needs_scope</code> or <code>tools_changed</code>.</li>
+        <li><code>PATCH /api/mcp-servers/{id}</code> with <code>{"headers": {...}}</code> or <code>{"env": {...}}</code> replaces the whole set.</li>
+        <li><code>DELETE /api/mcp-servers/{id}</code> deletes it, and agents stop using it.</li>
+        <li><code>POST /api/mcp-servers/{id}/oauth</code> returns <code>{authorize_url}</code> to open in the browser. After the user approves, the provider returns to <code>/api/mcp/oauth/callback</code>, which goes on to <code>/mcp?connected={id}</code> or <code>/mcp?error={code}</code>. The address works once, within 10 minutes, for the user who asked for it.</li>
+        <li><code>POST /api/mcp-servers/{id}/tools/review</code> with <code>{"hash"}</code> accepts a server's changed tools: <code>pending_tools</code> lists them and <code>pending_hash</code> is the hash to send. A hash that is no longer the one waiting answers <code>tools_moved_on</code>.</li>
+      </ul>
+      <dl class="codes">
+        <dt><code>mcp_server_limit_reached</code></dt><dd>You have 20 servers. Delete one first.</dd>
+        <dt><code>mcp_server_name_taken</code></dt><dd>You already have a server with that name.</dd>
+        <dt><code>endpoint_not_allowed</code></dt><dd>The address is not <code>https</code> or is not on the public internet.</dd>
+        <dt><code>mcp_auth_failed</code></dt><dd>The server refused the headers.</dd>
+        <dt><code>mcp_server_error</code></dt><dd>The server could not be reached or did not answer as an MCP server. The details are in Echo's log.</dd>
+      </dl>
+
       <h2 id="chat">Chats</h2>
       <p>Start a chat, then send messages to it. Each chat keeps its own conversation, and an agent can have many.</p>
       <pre><code>curl -b "$ECHO" -X POST http://localhost:8000/api/agents/{id}/chats</code></pre>
@@ -157,6 +187,9 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
         <dt><code>delegate</code></dt><dd><code>{id, task}</code>: a subagent started for the <code>subagent</code> tool call <code>id</code>.</dd>
         <dt><code>delegate_tool</code>, <code>delegate_tool_result</code></dt><dd><code>{delegate, id, name, detail}</code> and <code>{delegate, id, ok}</code>: a subagent's tool calls, with <code>delegate</code> naming its <code>subagent</code> call.</dd>
         <dt><code>delegate_done</code></dt><dd><code>{id, ok}</code>: the subagent for that call ended, and whether it finished.</dd>
+        <dt><code>approval_needed</code></dt><dd><code>{id, tool, server, hints, subagent, input}</code>: a tool call waits for an answer, in Ask mode. <code>server</code> and <code>hints</code> (the server's own annotations, not checked) are set for MCP tools, <code>subagent</code> is the task of the subagent that asked, and <code>input_cut</code> is true when <code>input</code> was cut short for display. Answer with <code>POST /api/agents/{id}/approvals/{approval id}</code> and <code>{"decision"}</code>: <code>allow</code>, <code>deny</code> or <code>always</code> (allow that tool for the rest of the chat). An id that is not waiting answers <code>approval_not_found</code>. A call waits 10 minutes.</dd>
+        <dt><code>approval_done</code></dt><dd><code>{id, decision}</code>: how a waiting call was answered: <code>allow</code>, <code>always</code>, <code>deny</code> or <code>timeout</code>.</dd>
+        <dt><code>mcp_unavailable</code></dt><dd><code>{server, reason, detail}</code>: one of the agent's MCP servers is left out of this turn, and why. <code>detail</code> is the end of a local server's error output when it exited, and is never shown to the model.</dd>
         <dt><code>title</code></dt><dd><code>{name}</code>: the name the workspace was given from your first message, sent once in the first turn of a workspace created without a name. It can arrive after <code>done</code>, so read the stream to its end. Until it comes, the workspace is named after the start of the message.</dd>
         <dt><code>done</code></dt><dd>The turn is over. <code>usage</code> holds the tokens it used on your model, subagents included (<code>inputTokens</code>, <code>outputTokens</code>, <code>cacheReadInputTokens</code>, <code>cacheWriteInputTokens</code>), not counting summaries made by the provider's small model. <code>learned</code> lists the skills the turn added, changed or removed.</dd>
         <dt><code>stopped</code></dt><dd>The turn was stopped on request.</dd>

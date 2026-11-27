@@ -1,6 +1,6 @@
 [project]
 name = "echo"
-version = "0.14.0"
+version = "0.15.0"
 requires-python = ">=3.12"
 dependencies = [
     "aiosqlite>=0.22.1",
@@ -8,8 +8,11 @@ dependencies = [
     "authlib>=1.9.10",
     "cryptography>=50.0.2",
     "fastapi[standard]>=0.165.0",
+    "httpcore2>=2.16.2",
     "httpx>=0.28",
+    "httpx2>=2.16.2",
     "itsdangerous>=2.2.0",
+    "mcp>=2.3.0",
     "sqlalchemy[asyncio]>=2.1",
     "strands-agents[anthropic,gemini,openai]>=1.65.0",
     "strands-harness>=0.4.0",

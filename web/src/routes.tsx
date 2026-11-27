@@ -4,6 +4,7 @@ import { AuthProvider, RequireAuth } from './auth'
 import { Shell } from './layout/Shell'
 import { Credentials } from './pages/Credentials'
 import { Home } from './pages/Home'
+import { McpServers } from './pages/McpServers'
 import { SignIn } from './pages/SignIn'
 
 // The workspace page carries Monaco, by far the largest part of the app, so it loads only when opened.
@@ -27,6 +28,7 @@ export const routes: RouteObject[] = [
           { path: '/w/:agentId', element: <Suspense><Workspace /></Suspense> },
           { path: '/w/:agentId/c/:chatId', element: <Suspense><Workspace /></Suspense> },
           { path: '/credentials', element: <Credentials /> },
+          { path: '/mcp', element: <McpServers /> },
           { path: '/agents/:agentId', element: <OldAgentLink /> },
         ],
       },

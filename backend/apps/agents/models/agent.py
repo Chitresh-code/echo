@@ -8,6 +8,9 @@ from core.db import UtcDateTime
 MAX_FILE_BYTES = 5 * 1024 * 1024
 
 
+ApprovalMode = Literal["ask", "yolo"]
+
+
 class Agent(BaseModel):
     id: str
     name: str
@@ -15,6 +18,8 @@ class Agent(BaseModel):
     job: str
     created_at: UtcDateTime
     last_used_at: UtcDateTime | None
+    # "ask" shows the user each call that changes something before it runs; "yolo" runs every call.
+    approval_mode: ApprovalMode = "ask"
 
 
 # Plain text, shown as text: trimmed so a name of only spaces is refused.
@@ -30,11 +35,13 @@ class NewAgent(BaseModel):
     # Optional, so the home screen can start a workspace from a message alone.
     name: Name | None = None
     job: Job = ""
+    approval_mode: ApprovalMode = "ask"
 
 
 class AgentUpdate(BaseModel):
     name: Name | None = None
     job: Job | None = None
+    approval_mode: ApprovalMode | None = None
 
 
 class TreeEntry(BaseModel):
