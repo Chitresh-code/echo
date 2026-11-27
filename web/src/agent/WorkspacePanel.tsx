@@ -1,11 +1,14 @@
 import Close from '@mui/icons-material/Close'
-import { Box, CircularProgress, IconButton, Tab, Tabs, Tooltip } from '@mui/material'
-import { lazy, Suspense, useState, type ReactNode } from 'react'
+import TerminalIcon from '@mui/icons-material/Terminal'
+import { Box, CircularProgress, IconButton, Tab, Tabs, Tooltip, Typography } from '@mui/material'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import type { Storage, Tree } from '../api/types'
-import { Explorer } from './Explorer'
+import { BottomPanel } from './BottomPanel'
+import { Explorer, type NewKind } from './Explorer'
 import type { OpenFiles } from './files'
 import { Notes, Skills } from './Knowledge'
-import { Preview } from './Preview'
+import { usePorts } from './ports'
+import { Processes } from './Processes'
 
 // Monaco is most of the page's weight; it loads the first time the panel opens.
 const Editor = lazy(() => import('./Editor').then((m) => ({ default: m.Editor })))
@@ -17,11 +20,11 @@ type Props = {
   storage: Storage | null
   files: OpenFiles
   version: number
-  view: 'editor' | 'preview'
-  onView: (view: 'editor' | 'preview') => void
+  /** The panel is shown, so polling for ports is worth doing. */
+  open: boolean
   onOpen: (path: string) => void
   onRefresh: () => void
-  onCreate: (path: string) => void
+  onCreate: (kind: NewKind, path: string) => Promise<void>
   onClose: () => void
   /** Wide enough to put the file list beside the editor rather than above it. */
   wide: boolean
@@ -31,16 +34,31 @@ type Props = {
 const tabsSx = { minHeight: 36, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 36, minWidth: 0, px: 1, py: 0, fontSize: 12, textTransform: 'none' } }
 
 /** Files, skills and notes beside the chat, with the editor and the preview. */
-export function WorkspacePanel({ agentId, tree, letters, storage, files, version, view, onView, onOpen, onRefresh, onCreate, onClose, wide }: Props) {
+export function WorkspacePanel({ agentId, tree, letters, storage, files, version, open, onOpen, onRefresh, onCreate, onClose, wide }: Props) {
   const [tab, setTab] = useState<'files' | 'skills' | 'notes'>('files')
-  const fill = (shown: boolean, children: ReactNode) => <Box sx={{ flexGrow: 1, minHeight: 0, display: shown ? 'block' : 'none' }}>{children}</Box>
+  const [terminal, setTerminal] = useState(false)
+  const ports = usePorts(agentId, open, files)
+  // Ctrl+` as in VS Code. Capture phase, so it works while a terminal or the editor has focus.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (e.ctrlKey && !e.altKey && !e.metaKey && e.code === 'Backquote') {
+        e.preventDefault()
+        e.stopPropagation()
+        setTerminal((t) => !t)
+      }
+    }
+    window.addEventListener('keydown', key, true)
+    return () => window.removeEventListener('keydown', key, true)
+  }, [])
   return (
     <Box component="section" aria-label="Workspace panel" sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: 'background.paper' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', borderBottom: 1, borderColor: 'divider' }}>
-        <Tabs value={view} onChange={(_, v) => onView(v)} sx={{ ...tabsSx, borderBottom: 0, flexGrow: 1 }}>
-          <Tab value="editor" label="Editor" />
-          <Tab value="preview" label="Preview" />
-        </Tabs>
+        <Typography component="h2" sx={{ fontSize: 12, fontWeight: 600, color: 'text.secondary', px: 1.5, flexGrow: 1 }}>Workspace</Typography>
+        <Tooltip title="Terminal (Ctrl+`)">
+          <IconButton aria-label="Terminal" aria-pressed={terminal} onClick={() => setTerminal((t) => !t)} sx={{ width: 32, height: 32, ...(terminal && { color: 'primary.main' }) }}>
+            <TerminalIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Tooltip>
         <Tooltip title="Close panel">
           <IconButton aria-label="Close panel" onClick={onClose} sx={{ width: 32, height: 32, mr: 0.5 }}>
             <Close sx={{ fontSize: 18 }} />
@@ -54,18 +72,18 @@ export function WorkspacePanel({ agentId, tree, letters, storage, files, version
             <Tab value="skills" label="Skills" />
             <Tab value="notes" label="Notes" />
           </Tabs>
-          {tab === 'files' && <Explorer tree={tree} letters={letters} active={files.active} onOpen={onOpen} onRefresh={onRefresh} onCreate={onCreate} storage={storage} />}
+          {tab === 'files' && <Explorer agentId={agentId} tree={tree} letters={letters} active={files.active} onOpen={onOpen} onRefresh={onRefresh} onCreate={onCreate} storage={storage} />}
           {tab === 'skills' && <Skills agentId={agentId} version={version} onOpen={onOpen} />}
           {tab === 'notes' && <Notes agentId={agentId} version={version} />}
         </Box>
-        {/* Both stay mounted, so unsaved edits and a loaded preview survive switching. */}
         <Box sx={{ flexGrow: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-          {fill(view === 'editor', (
+          <Box sx={{ flexGrow: 1, minHeight: 0 }}>
             <Suspense fallback={<Box sx={{ display: 'grid', placeItems: 'center', height: '100%' }}><CircularProgress size={20} aria-label="Loading the editor" /></Box>}>
-              <Editor agentId={agentId} files={files} letters={letters} />
+              <Editor agentId={agentId} files={files} letters={letters} listening={ports.data?.ports ?? []} onClosePreview={ports.dismiss} />
             </Suspense>
-          ))}
-          {fill(view === 'preview', <Preview agentId={agentId} active={view === 'preview'} />)}
+          </Box>
+          <BottomPanel agentId={agentId} open={terminal} onClose={() => setTerminal(false)}
+            extra={[{ key: 'processes', label: 'Processes', body: <Processes agentId={agentId} ports={ports} onShow={(p) => files.openPreview(p)} /> }]} />
         </Box>
       </Box>
     </Box>

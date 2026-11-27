@@ -101,6 +101,8 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
         <li><code>GET /api/agents/{id}/tree</code> lists every file and folder except <code>.git</code>, at most 5000 entries.</li>
         <li><code>GET /api/agents/{id}/file?path=src/app.py</code> reads a file. Text comes back as is; a file that is not UTF-8 text comes back base64 encoded, and the answer says which.</li>
         <li><code>PUT /api/agents/{id}/file</code> with <code>{"path": "src/app.py", "content": "..."}</code> saves a text file and creates any folders it needs.</li>
+        <li><code>POST /api/agents/{id}/folders</code> with <code>{"path": "src/lib"}</code> makes a folder and any folders above it.</li>
+        <li><code>POST /api/agents/{id}/files</code> uploads files as a multipart form: <code>files</code> (one or more), <code>folder</code> (empty for the top of the workspace) and <code>overwrite</code>. Up to 20 files and 25 MB at a time, 5 MB each. Without <code>overwrite=true</code>, names that are already there answer <code>files_exist</code> and nothing is written.</li>
         <li><code>GET /api/agents/{id}/git/status</code> lists the files changed since the last commit, and <code>GET /api/agents/{id}/git/file?path=...</code> returns a file as it was in the last commit and as it is now.</li>
       </ul>
       <p>Paths are relative to the workspace. A path that starts with <code>/</code> or uses <code>..</code> answers <code>invalid_path</code>. Files over 5 MB answer <code>file_too_large</code>, and a missing one <code>file_not_found</code>.</p>
@@ -116,6 +118,19 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
       <dl class="codes">
         <dt><code>process_not_found</code></dt><dd>The agent has no process with that name.</dd>
         <dt><code>preview_off</code></dt><dd>Previews are not set up on this Echo (<code>ECHO_PREVIEW_URL</code> is not set).</dd>
+      </dl>
+
+      <h2 id="terminals">Terminals</h2>
+      <p>A terminal is a shell in the agent's sandbox, in the workspace folder. It keeps running when nobody is connected, until it exits, is ended, has been unwatched for 30 minutes or has run for 8 hours.</p>
+      <ul>
+        <li><code>POST /api/agents/{id}/terminals</code> with <code>{"cols": 80, "rows": 24}</code> starts one and returns its <code>id</code>, <code>started_at</code> and <code>attached</code>, the number of connections watching it.</li>
+        <li><code>GET /api/agents/{id}/terminals</code> lists the running ones.</li>
+        <li><code>DELETE /api/agents/{id}/terminals/{terminal_id}</code> ends one.</li>
+        <li>A WebSocket at <code>/api/agents/{id}/terminals/{terminal_id}</code> connects to it, signed in with the session cookie and opened from Echo's own address. It first sends the recent output, then the output as it comes, as binary frames. Send text frames <code>{"type": "input", "data": "ls\r"}</code> to type and <code>{"type": "resize", "cols": 120, "rows": 30}</code> when the screen changes size. It closes with 1000 when the shell exits, 4404 when the terminal is not there and 4401 when you are not signed in.</li>
+      </ul>
+      <dl class="codes">
+        <dt><code>too_many_terminals</code></dt><dd>The workspace has 4 terminals open (409), or the sandbox has as many as it can run (429).</dd>
+        <dt><code>terminal_not_found</code></dt><dd>The terminal has ended.</dd>
       </dl>
 
       <h2 id="chat">Chats</h2>

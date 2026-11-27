@@ -3,7 +3,8 @@ request passes `check_origin`."""
 
 from urllib.parse import urlsplit
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, WebSocketException
+from starlette.requests import HTTPConnection
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.accounts.models.account import User
@@ -23,17 +24,22 @@ async def current_user(request: Request, session: AsyncSession = Depends(db)) ->
 _UNSAFE = {"POST", "PUT", "PATCH", "DELETE"}
 
 
-def check_origin(request: Request) -> None:
+def check_origin(request: HTTPConnection) -> None:
     """Refuse a state-changing request sent by another site's page with the user's cookie. SameSite=Lax
     already holds the cookie back from cross-site posts; this also covers same-site neighbours and
-    old browsers."""
-    if request.method not in _UNSAFE:
+    old browsers. A WebSocket counts as state-changing: browsers send cookies on another site's
+    handshake, and nothing like CORS stops that page reading the socket."""
+    websocket = request.scope["type"] == "websocket"
+    if not websocket and request.method not in _UNSAFE:
         return
-    source = request.headers.get("origin") or request.headers.get("referer")
+    source = request.headers.get("origin") or (None if websocket else request.headers.get("referer"))
     # Browsers send Origin on every POST, PUT, PATCH and DELETE, so a request with neither header
     # comes from a client like curl, which holds its own cookie and cannot be tricked into sending it.
     if source is None:
         return
     parts = urlsplit(source)
     if f"{parts.scheme}://{parts.netloc}".lower() != get_settings().public_url.lower():
+        if websocket:
+            # Refused at the handshake, before anything is read or sent.
+            raise WebSocketException(4403, "bad_origin")
         raise AppError(403, "bad_origin", "This request came from another site. Open Echo at its own address.")

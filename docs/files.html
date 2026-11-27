@@ -60,15 +60,24 @@
         <li><b>U</b> new</li>
         <li><b>D</b> deleted</li>
       </ul>
-      <p>The number of changed files shows in the workspace header. The new-file button creates a file, and refresh reloads the list, which also happens after every reply.</p>
+      <p>The number of changed files shows in the workspace header. Refresh reloads the list, which also happens after every reply.</p>
+
+      <h2 id="add">Add files and folders</h2>
+      <p><b>New file</b> and <b>New folder</b> at the top of the Files tab, or on a folder's row when you point at it, open a name box in the tree, in the folder you are in. It tells you as you type when a name is taken or cannot be used. A name with slashes, such as <code>src/lib/util.ts</code>, makes the folders on the way. <kbd>Enter</kbd> makes it and <kbd>Escape</kbd> cancels. A new file opens in the editor.</p>
+      <p>To bring in files from your computer, use <b>Upload</b>, or drop files onto the Files tab or onto a folder in it. You can add up to 20 files and 25 MB at a time, 5 MB each. If a file with the same name is already there, Echo asks before replacing it. Folders cannot be uploaded; upload the files inside them instead.</p>
 
       <h2 id="edit">Edit a file</h2>
-      <p>Click a file to open it in a tab in the editor, which switches the panel back from <a href="chatting.html#servers">Preview</a> to <b>Editor</b> if needed. Save with the <b>Save</b> button or <kbd>Ctrl</kbd>+<kbd>S</kbd> (<kbd>Cmd</kbd>+<kbd>S</kbd> on a Mac). A tab with unsaved edits is marked, and the browser warns you before you leave with unsaved edits. Files that are not text show as "Binary file, not shown".</p>
+      <p>Click a file to open it in a tab in the editor. Pages of running servers open in tabs beside your files; see <a href="chatting.html#servers">Servers and previews</a>. Save with the <b>Save</b> button or <kbd>Ctrl</kbd>+<kbd>S</kbd> (<kbd>Cmd</kbd>+<kbd>S</kbd> on a Mac). A tab with unsaved edits is marked, and the browser warns you before you leave with unsaved edits. Files that are not text show as "Binary file, not shown".</p>
       <p>If the agent changes a file you have open with unsaved edits, your text stays and the editor tells you the file changed, with a button to reload it.</p>
 
       <h2 id="diff">See what changed</h2>
       <p>For a changed file, <b>Diff</b> shows the last saved version next to the file as it is now. A new file is compared with an empty one. This is the quickest way to check the agent's work before you rely on it.</p>
       <div class="tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg><p>The agent saves a version of the workspace whenever it finishes a task that changed files, so the letters clear after each finished task. The letters you see are work in progress, including your own edits.</p></div>
+
+      <h2 id="terminal">Terminal</h2>
+      <p>The <b>Terminal</b> button in the files panel header, or <kbd>Ctrl</kbd>+<kbd>`</kbd>, opens a shell under the editor. It runs in the same sandbox as the agent, in the workspace folder, with the same tools and the same network, so what you run there sees what the agent made and the agent sees what you change. Drag the top edge of the panel to make it taller or shorter.</p>
+      <p>Use <b>+</b> to open another shell, up to 4 per workspace, each in its own tab. A shell keeps running when you close the page or lose the connection: open the terminal again and it reconnects and shows its recent output. A shell nobody is watching ends after 30 minutes, any shell ends after 8 hours, and all shells end when Echo restarts. Closing a terminal's tab ends its shell.</p>
+      <p>The <b>Processes</b> tab beside the terminals lists the servers and watchers the agent started; see <a href="chatting.html#servers">Servers and previews</a>.</p>
 
       <h2 id="storage">Storage limit</h2>
       <p>Each agent has room for 2 GB, unless whoever runs Echo set another limit. That covers its files and the tools it installs for itself. The bottom of the Files tab shows how much it uses, in yellow once it passes 90%.</p>

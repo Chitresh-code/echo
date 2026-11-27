@@ -52,6 +52,12 @@ class Settings:
     process_timeout: int = 7200
     max_processes_per_workspace: int = 3
     max_processes: int = 20
+    # Terminals (app/terminals.py): a shell's time limit, how long it lives with no page attached,
+    # and how many may be open.
+    terminal_timeout: int = 28800
+    terminal_idle: int = 1800
+    max_terminals_per_workspace: int = 4
+    max_terminals: int = 40
     nsjail: str = "nsjail"
     # Tools for the per-workspace network namespaces (app/net.py); tests replace them.
     nsenter: str = "nsenter"
@@ -69,6 +75,10 @@ def load_settings(env: Mapping[str, str] = os.environ) -> Settings:
         process_timeout=int(env.get("RUNNER_PROCESS_TIMEOUT", "7200")),
         max_processes_per_workspace=int(env.get("RUNNER_MAX_PROCESSES_PER_WORKSPACE", "3")),
         max_processes=int(env.get("RUNNER_MAX_PROCESSES", "20")),
+        terminal_timeout=int(env.get("RUNNER_TERMINAL_TIMEOUT", "28800")),
+        terminal_idle=int(env.get("RUNNER_TERMINAL_IDLE", "1800")),
+        max_terminals_per_workspace=int(env.get("RUNNER_MAX_TERMINALS_PER_WORKSPACE", "4")),
+        max_terminals=int(env.get("RUNNER_MAX_TERMINALS", "40")),
     )
 
 
@@ -143,8 +153,10 @@ def build_argv(
     env: Mapping[str, str] | None = None,
     lib64_exists: bool | None = None,
     fsize_mb: int = 1024,
+    tty: str | None = None,
 ) -> list[str]:
-    """`fsize_mb` is the largest file the jail may write; 0 lets it read and delete but not write."""
+    """`fsize_mb` is the largest file the jail may write; 0 lets it read and delete but not write.
+    `tty` is the device path of a pseudo terminal the caller opened for this jail alone."""
     workspace = workspace_dir(settings, workspace_id)
     home = home_dir(settings, workspace_id)
     if lib64_exists is None:
@@ -191,6 +203,14 @@ def build_argv(
         "-E", "GIT_AUTHOR_NAME=Echo", "-E", "GIT_AUTHOR_EMAIL=agent@echo.local",
         "-E", "GIT_COMMITTER_NAME=Echo", "-E", "GIT_COMMITTER_EMAIL=agent@echo.local",
     ]
+    if tty:
+        # The shell keeps the caller's session, whose controlling terminal is the pseudo terminal
+        # opened for this jail, so job control and Ctrl+C work. The usual risk of skipping setsid,
+        # a jailed process pushing keystrokes into its parent's terminal, does not apply to a
+        # terminal nothing else uses.
+        # Only this jail's own terminal device is mounted, so `tty`, and prompts that open /dev/tty
+        # (ssh and git asking for a password), work without exposing any other terminal.
+        argv += ["--skip_setsid", "-E", "TERM=xterm-256color", "-B", tty, "-B", "/dev/tty"]
     if fsize_mb == 0:
         # git status otherwise refreshes the index, a write that the file size limit kills.
         argv += ["-E", "GIT_OPTIONAL_LOCKS=0"]

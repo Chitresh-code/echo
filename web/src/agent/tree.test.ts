@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest'
-import { buildRows, statusLetters } from './tree'
+import { buildRows, nameProblem, parents, statusLetters } from './tree'
 
 const entries = [
   { path: 'README.md', type: 'file' as const },
@@ -30,4 +30,18 @@ test('expanded folders show their children sorted', () => {
   expect(rows.map((r) => [r.name, r.depth, r.status])).toEqual([
     ['.agent', 0, ''], ['src', 0, '•'], ['lib', 1, '•'], ['a.py', 1, 'M'], ['b.py', 1, ''], ['README.md', 0, 'A'],
   ])
+})
+
+test('names that cannot be made say why', () => {
+  const problem = (name: string, folder = '') => nameProblem(name, entries, folder)
+  expect(problem('new.ts')).toBeNull()
+  expect(problem('lib/deep/x.ts', 'src')).toBeNull()
+  expect(problem('a.py', 'src')).toMatch(/already exists/)
+  expect(problem('src')).toMatch(/already exists/)
+  expect(problem('README.md/x')).toMatch(/is a file/)
+  expect(problem('  ')).toMatch(/Type a name/)
+  expect(problem('/etc')).toMatch(/start with/)
+  expect(problem('a/../b')).toMatch(/real name/)
+  expect(problem('a\\b')).toMatch(/separate/)
+  expect(parents('a/b/c')).toEqual(['a', 'a/b'])
 })

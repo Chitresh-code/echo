@@ -16,6 +16,10 @@ export type OpenFile = {
   head: string | null
 }
 
+/** The tab key of a port's preview. Workspace paths are relative, so it never matches a file. */
+export const previewKey = (port: number) => `/preview/${port}`
+export const previewPort = (key: string | null) => (key?.startsWith('/preview/') ? Number(key.slice(9)) : null)
+
 const blank = (path: string, mode: OpenFile['mode']): OpenFile => ({
   path, loading: true, error: '', binary: false, saved: '', value: '', changedOnDisk: false, mode, head: null,
 })
@@ -29,8 +33,13 @@ async function readHead(agentId: string, path: string): Promise<string | null> {
 export function useOpenFiles(agentId: string) {
   const [files, setFiles] = useState<OpenFile[]>([])
   const [active, setActive] = useState<string | null>(null)
+  // Ports shown as preview tabs, after the files.
+  const [previews, setPreviews] = useState<number[]>([])
   const filesRef = useRef(files)
   filesRef.current = files
+  const previewsRef = useRef(previews)
+  previewsRef.current = previews
+  const last = (files: OpenFile[], ports: number[]) => files.at(-1)?.path ?? (ports.length ? previewKey(ports.at(-1)!) : null)
 
   const update = useCallback((path: string, change: Partial<OpenFile>) => {
     setFiles((all) => all.map((f) => (f.path === path ? { ...f, ...change } : f)))
@@ -67,7 +76,21 @@ export function useOpenFiles(agentId: string) {
   const close = useCallback((path: string) => {
     setFiles((all) => {
       const next = all.filter((f) => f.path !== path)
-      setActive((current) => (current === path ? (next.at(-1)?.path ?? null) : current))
+      setActive((current) => (current === path ? last(next, previewsRef.current) : current))
+      return next
+    })
+  }, [])
+
+  /** Shows a port's page in a tab; `focus` false adds the tab without leaving the current one. */
+  const openPreview = useCallback((port: number, focus = true) => {
+    setPreviews((p) => (p.includes(port) ? p : [...p, port]))
+    if (focus) setActive(previewKey(port))
+  }, [])
+
+  const closePreview = useCallback((port: number) => {
+    setPreviews((p) => {
+      const next = p.filter((x) => x !== port)
+      setActive((current) => (current === previewKey(port) ? last(filesRef.current, next) : current))
       return next
     })
   }, [])
@@ -121,7 +144,7 @@ export function useOpenFiles(agentId: string) {
     [load, update],
   )
 
-  return { files, active, setActive, open, close, update, setMode, save, refresh, reload }
+  return { files, previews, active, setActive, open, close, openPreview, closePreview, update, setMode, save, refresh, reload }
 }
 
 export type OpenFiles = ReturnType<typeof useOpenFiles>

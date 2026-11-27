@@ -5,6 +5,7 @@ path or symlink in it can never reach anything outside it."""
 import asyncio
 import base64
 import logging
+import re
 import shlex
 import shutil
 import uuid
@@ -15,6 +16,8 @@ from strands.sandbox.errors import SandboxPathNotFoundError
 from apps.agents.models.agent import (
     DEFAULT_NAME,
     MAX_FILE_BYTES,
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_FILES,
     Agent,
     AgentUpdate,
     FileContent,
@@ -42,7 +45,7 @@ logger = logging.getLogger(__name__)
 MAX_TREE_ENTRIES = 5000
 _TYPES = {"f": "file", "d": "dir", "l": "link"}
 # Exit codes the commands below use to report a result, chosen to not clash with git or the shell.
-_MISSING, _TOO_LARGE = 77, 78
+_MISSING, _TOO_LARGE, _EXISTS = 77, 78, 79
 
 
 def _sandbox(settings: Settings, agent_id: str) -> RunnerSandbox:
@@ -165,20 +168,90 @@ async def read_file(settings: Settings, agent_id: str, path: str) -> FileContent
     return await _read_working(_sandbox(settings, agent_id), safe_relpath(path))
 
 
-async def write_file(settings: Settings, agent_id: str, path: str, content: str) -> None:
-    data = content.encode("utf-8")
-    if len(data) > MAX_FILE_BYTES:
-        raise _too_large()
-    rel = safe_relpath(path)
+def _path_exists(rel: str) -> AppError:
+    return AppError(409, "path_exists", f"{rel} already exists. Pick another name.")
+
+
+async def _check_space(settings: Settings, agent_id: str) -> None:
     # A full workspace's jail cannot write, and this says why instead of a bare failure.
     space = await usage(settings, agent_id)
     if space.used_bytes > space.limit_bytes:
         raise AppError(507, "disk_quota_exceeded", f"This agent uses all of its {space.limit_bytes // (1024 * 1024)} MB of storage. Delete files to save again.")
+
+
+async def write_file(settings: Settings, agent_id: str, path: str, content: str, create: bool = False) -> None:
+    data = content.encode("utf-8")
+    if len(data) > MAX_FILE_BYTES:
+        raise _too_large()
+    rel = safe_relpath(path)
+    await _check_space(settings, agent_id)
     sandbox = _sandbox(settings, agent_id)
+    if create:
+        # noclobber makes the shell's create fail if anything has the name, in one step, so a file
+        # another tab made a moment ago is never overwritten.
+        target = shlex.quote(f"{sandbox.root}/{rel}")
+        result = await sandbox.execute(f"mkdir -p -- \"$(dirname -- {target})\" || exit 1; [ -e {target} ] && exit {_EXISTS}; set -C; : > {target} || exit {_EXISTS}")
+        if result.exit_code == _EXISTS:
+            raise _path_exists(rel)
+        if result.exit_code != 0:
+            raise AppError(400, "write_failed", "The file could not be made. Check no file has the name of one of its folders.")
+        if not data:
+            return
     try:
         await sandbox.write_file(f"{sandbox.root}/{rel}", data)
     except OSError:
         raise AppError(400, "write_failed", "The file could not be saved. Check the path is not a directory.") from None
+
+
+async def make_folder(settings: Settings, agent_id: str, path: str) -> None:
+    rel = safe_relpath(path)
+    await _check_space(settings, agent_id)
+    sandbox = _sandbox(settings, agent_id)
+    target = shlex.quote(f"{sandbox.root}/{rel}")
+    result = await sandbox.execute(f"[ -e {target} ] && exit {_EXISTS}; mkdir -p -- {target}")
+    if result.exit_code == _EXISTS:
+        raise _path_exists(rel)
+    if result.exit_code != 0:
+        raise AppError(400, "write_failed", "The folder could not be made. Check no file has the name of one of its folders.")
+
+
+def upload_target(folder: str, filename: str) -> str:
+    """Where an uploaded file lands: its own name only, whatever path the browser sent, in `folder`."""
+    name = re.split(r"[\\/]", filename or "")[-1]
+    if name in ("", ".", "..") or "\0" in name:
+        raise AppError(400, "invalid_path", f"{filename!r} is not a file name that can be saved.")
+    return safe_relpath(f"{folder.strip('/')}/{name}" if folder.strip("/") else name)
+
+
+async def upload(settings: Settings, agent_id: str, folder: str, files: list[tuple[str, bytes]], overwrite: bool) -> list[str]:
+    if not files:
+        raise AppError(400, "no_files", "Choose at least one file to upload.")
+    if len(files) > MAX_UPLOAD_FILES:
+        raise AppError(400, "too_many_files", f"Upload at most {MAX_UPLOAD_FILES} files at a time.")
+    if sum(len(data) for _, data in files) > MAX_UPLOAD_BYTES:
+        raise AppError(413, "upload_too_large", f"Upload at most {MAX_UPLOAD_BYTES // (1024 * 1024)} MB at a time.")
+    for name, data in files:
+        if len(data) > MAX_FILE_BYTES:
+            raise AppError(413, "file_too_large", f"{name} is larger than {MAX_FILE_BYTES // (1024 * 1024)} MB.")
+    targets = [(upload_target(folder, name), data) for name, data in files]
+    if len({t for t, _ in targets}) < len(targets):
+        raise AppError(400, "duplicate_names", "Two of the files have the same name.")
+    await _check_space(settings, agent_id)
+    sandbox = _sandbox(settings, agent_id)
+    if not overwrite:
+        # One command for every name: prints the ones already there.
+        tests = " ".join(f"[ -e {shlex.quote(f'{sandbox.root}/{t}')} ] && printf '%s\\0' {shlex.quote(t)};" for t, _ in targets)
+        result = await sandbox.execute(f"{tests} true")
+        if taken := [p for p in result.stdout.split("\0") if p]:
+            raise AppError(409, "files_exist", f"{len(taken)} of these files already exist.", details={"paths": taken})
+    written: list[str] = []
+    for target, data in targets:
+        try:
+            await sandbox.write_file(f"{sandbox.root}/{target}", data)
+        except OSError:
+            raise AppError(400, "write_failed", f"{target} could not be saved. Check no folder has its name.", details={"written": written}) from None
+        written.append(target)
+    return written
 
 
 async def git_status(settings: Settings, agent_id: str) -> list[GitFileStatus]:

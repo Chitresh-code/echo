@@ -12,6 +12,7 @@ from apps.agents.routers.agent_router import router as agent_router
 from apps.chat.routers.chat_router import router as chat_router
 from apps.credentials.routers.credential_router import router as credential_router
 from apps.preview.routers.preview_router import router as preview_router
+from apps.terminal.routers.terminal_router import router as terminal_router, socket_router as terminal_socket_router
 from core.auth import check_origin
 from core.config import get_settings
 from core.error_handlers import register_error_handlers
@@ -68,6 +69,8 @@ def create_app(web_dir: Path | None = None) -> FastAPI:
     app.include_router(agent_router)
     app.include_router(chat_router)
     app.include_router(preview_router)
+    app.include_router(terminal_router)
+    app.include_router(terminal_socket_router)
 
     # The mount only matches /docs/..., so without this a bare /docs would reach the web app's
     # catch-all and show the app instead of the guide.

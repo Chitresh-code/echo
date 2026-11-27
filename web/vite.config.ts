@@ -8,7 +8,7 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    proxy: { '/api': 'http://localhost:8000', '/docs': 'http://localhost:8000' },
+    proxy: { '/api': { target: 'http://localhost:8000', ws: true }, '/docs': 'http://localhost:8000' },
   },
   build: { outDir: 'dist', chunkSizeWarningLimit: 6000 },
   test: { environment: 'jsdom' },

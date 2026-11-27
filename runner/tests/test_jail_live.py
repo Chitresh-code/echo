@@ -471,3 +471,40 @@ def test_preview_with_nothing_listening_and_no_thread_left_inside(client, live_s
     # Every thread of the runner is still in the runner's own network namespace.
     own = os.readlink("/proc/self/ns/net")
     assert all(os.readlink(t / "ns" / "net") == own for t in Path("/proc/self/task").iterdir())
+
+
+def test_terminal_is_a_jailed_shell_with_job_control(client, live_settings):
+    ws = new_ws(client)
+    tid = client.post(f"/workspaces/{ws}/terminals", json={"cols": 90, "rows": 20}).json()["data"]["id"]
+
+    def read_until(sock, marker: bytes) -> bytes:
+        seen = b""
+        while marker not in seen:
+            seen += sock.receive_bytes()
+        return seen
+
+    def type_(sock, text):
+        sock.send_text(json.dumps({"type": "input", "data": text}))
+
+    with client.websocket_connect(f"/workspaces/{ws}/terminals/{tid}") as sock:
+        type_(sock, "echo $(id -u):$(pwd):$TERM:$(stty size):e''nd\r")
+        out = read_until(sock, b":end")
+        assert f"1000:{jail.workspace_dir(live_settings, ws)}:xterm-256color:20 90:end".encode() in out
+        # Nothing of the host or other workspaces is mounted.
+        type_(sock, "ls /data /opt 2>&1 | head -2; echo done''1\r")
+        out = read_until(sock, b"done1")
+        assert b"No such file" in out
+        # Ctrl+C reaches the foreground job, so the shell has the terminal as its controlling tty.
+        type_(sock, "sleep 100\r")
+        time.sleep(0.5)
+        type_(sock, "\x03echo after''int\r")
+        read_until(sock, b"afterint")
+        type_(sock, "tty; echo done''2\r")
+        assert b"not a tty" not in read_until(sock, b"done2")
+        type_(sock, "echo via''tty > /dev/tty\r")
+        out = read_until(sock, b"viatty")
+        assert b"I have no name" not in out
+        # A server started in the shell shows as a listening port with no background process.
+        type_(sock, "python3 -m http.server 8131 --bind 127.0.0.1\r")
+        assert _wait_for_port(client, ws, 8131)["processes"] == []
+    client.delete(f"/workspaces/{ws}/terminals/{tid}")

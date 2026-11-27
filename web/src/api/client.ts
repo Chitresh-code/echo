@@ -4,10 +4,13 @@
 export class ApiError extends Error {
   status: number
   code: string
-  constructor(status: number, code: string, message: string) {
+  /** Extra facts some errors carry, such as the taken paths of an upload. */
+  details: Record<string, unknown> | null
+  constructor(status: number, code: string, message: string, details: Record<string, unknown> | null = null) {
     super(message)
     this.status = status
     this.code = code
+    this.details = details
   }
 }
 
@@ -19,7 +22,7 @@ export function setUnauthorizedHandler(handler: () => void) {
 }
 
 export async function unwrap<T>(response: Response): Promise<T> {
-  let body: { success?: boolean; data?: T; error?: { code?: string; message?: string } } | null = null
+  let body: { success?: boolean; data?: T; error?: { code?: string; message?: string; details?: Record<string, unknown> | null } } | null = null
   try {
     body = await response.json()
   } catch {
@@ -31,16 +34,19 @@ export async function unwrap<T>(response: Response): Promise<T> {
     response.status,
     body?.error?.code ?? 'http_error',
     body?.error?.message ?? `The request failed (${response.status}).`,
+    body?.error?.details ?? null,
   )
 }
 
+/** A FormData body is sent as multipart (the browser sets its boundary); anything else as JSON. */
 export async function api<T>(path: string, options: { method?: string; body?: unknown; signal?: AbortSignal } = {}): Promise<T> {
   const { method = 'GET', body, signal } = options
+  const form = body instanceof FormData
   const response = await fetch(path, {
     method,
     credentials: 'same-origin',
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    headers: body === undefined || form ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : form ? body : JSON.stringify(body),
     signal,
   })
   return unwrap<T>(response)

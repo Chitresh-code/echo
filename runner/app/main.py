@@ -13,12 +13,12 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, Path as PathParam, Request
+from fastapi import FastAPI, Path as PathParam, Request, WebSocket, WebSocketDisconnect
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app import jail, net, preview, processes, usage
+from app import jail, net, preview, processes, terminals, usage
 
 logger = logging.getLogger("runner")
 
@@ -28,6 +28,15 @@ class ProcessRequest(BaseModel):
     command: str = Field(max_length=100_000)
     cwd: str | None = None
     env: dict[str, str] | None = None
+
+
+class TerminalRequest(BaseModel):
+    cols: int = Field(80, ge=1, le=terminals.MAX_COLS)
+    rows: int = Field(24, ge=1, le=terminals.MAX_ROWS)
+
+
+# A paste larger than this is refused rather than queued into a shell that may not be reading.
+TERMINAL_INPUT_MAX = 64 * 1024
 
 
 class ExecRequest(BaseModel):
@@ -45,10 +54,12 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
 
 def create_app(settings: jail.Settings) -> FastAPI:
     registry = processes.Registry(settings)
+    shells = terminals.Terminals(settings)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
         yield
+        await shells.stop_all()
         await registry.stop_all()
 
     app = FastAPI(title="Echo runner", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
@@ -70,11 +81,11 @@ def create_app(settings: jail.Settings) -> FastAPI:
         logger.error("Unhandled exception", exc_info=exc)
         return _error(500, "runner_error", "The runner failed.")
 
-    async def prepare(workspace_id: str, command: str, timeout: int, cwd=None, env=None, fsize_mb: int = 1024) -> tuple[list[str], Path]:
+    async def prepare(workspace_id: str, command: str, timeout: int, cwd=None, env=None, fsize_mb: int = 1024, tty: str | None = None) -> tuple[list[str], Path]:
         await net.ensure(settings, workspace_id)
         script = jail.write_script(settings, command)
         try:
-            return jail.build_argv(settings, workspace_id, script, timeout, cwd, env, fsize_mb=fsize_mb), script
+            return jail.build_argv(settings, workspace_id, script, timeout, cwd, env, fsize_mb=fsize_mb, tty=tty), script
         except BaseException:
             script.unlink()
             raise
@@ -135,6 +146,7 @@ def create_app(settings: jail.Settings) -> FastAPI:
         if not any(f.exists() for f in folders):
             return _error(404, "workspace_not_found", "There is no workspace with this id.")
         # Before the folders go, so no process is left writing into them.
+        await shells.stop_workspace(workspace_id)
         await registry.stop_workspace(workspace_id)
         for folder in folders:
             # rmtree removes a link the agent made instead of following it. Off the event loop,
@@ -200,7 +212,14 @@ def create_app(settings: jail.Settings) -> FastAPI:
     @app.get("/workspaces/{workspace_id}/processes")
     def list_processes(workspace_id: str):
         check_workspace(workspace_id)
-        return {"success": True, "data": registry.list(workspace_id)}
+        data = registry.list(workspace_id)
+        if not data["ports"]:
+            # Ports are read through a process inside the workspace's network namespace; with no
+            # background process running, an open shell is one (a server started from a terminal).
+            pid = next((t.proc.pid for t in shells.table.get(workspace_id, {}).values() if t.proc.returncode is None), None)
+            if pid:
+                data["ports"] = processes.listening_ports(pid)
+        return {"success": True, "data": data}
 
     @app.get("/workspaces/{workspace_id}/processes/{name}/logs")
     def process_logs(workspace_id: str, name: str, tail: int = 200):
@@ -214,6 +233,74 @@ def create_app(settings: jail.Settings) -> FastAPI:
         process = registry.get(workspace_id, name)
         await registry.stop(process)
         return {"success": True, "data": process.to_json()}
+
+    @app.post("/workspaces/{workspace_id}/terminals")
+    async def start_terminal(workspace_id: str, body: TerminalRequest):
+        check_workspace(workspace_id)
+        used, limit = await usage.used(settings, workspace_id), usage.limit(settings)
+        # The same rule as exec: over the limit a shell can read and delete, but not write.
+        full = used > limit
+
+        async def argv_for(timeout: int, tty: str):
+            return await prepare(workspace_id, terminals.COMMAND, timeout, fsize_mb=0 if full else 1024, tty=tty)
+
+        note = usage.over_limit_message(used, limit) if full else ""
+        terminal = await shells.start(workspace_id, argv_for, body.cols, body.rows, note)
+        return {"success": True, "data": terminal.to_json()}
+
+    @app.get("/workspaces/{workspace_id}/terminals")
+    def list_terminals(workspace_id: str):
+        check_workspace(workspace_id)
+        return {"success": True, "data": {"terminals": shells.list(workspace_id)}}
+
+    @app.delete("/workspaces/{workspace_id}/terminals/{terminal_id}")
+    async def stop_terminal(workspace_id: str, terminal_id: str):
+        check_workspace(workspace_id)
+        await shells.stop(shells.get(workspace_id, terminal_id))
+        return {"success": True, "data": {"deleted": True}}
+
+    @app.websocket("/workspaces/{workspace_id}/terminals/{terminal_id}")
+    async def attach_terminal(ws: WebSocket, workspace_id: str, terminal_id: str):
+        """Output goes out as binary frames, the scrollback first. Input comes in as JSON text
+        frames: {"type": "input", "data": str} or {"type": "resize", "cols": int, "rows": int}.
+        Closes with 4404 for a terminal that does not exist and 1000 when the shell exits."""
+        try:
+            check_workspace(workspace_id)
+            terminal = shells.get(workspace_id, terminal_id)
+        except jail.JailError:
+            await ws.close(4404)
+            return
+        await ws.accept()
+        queue = terminal.attach()
+
+        async def send():
+            while (data := await queue.get()) is not None:
+                await ws.send_bytes(data)
+            await ws.close(1000, "exited" if terminal.ended.is_set() else "too slow")
+
+        async def receive():
+            while True:
+                text = await ws.receive_text()
+                if len(text) > TERMINAL_INPUT_MAX:
+                    await ws.close(1009, "input too large")
+                    return
+                with contextlib.suppress(ValueError, TypeError, KeyError):
+                    message = json.loads(text)
+                    if message["type"] == "input" and isinstance(message["data"], str):
+                        await terminal.write(message["data"].encode())
+                    elif message["type"] == "resize":
+                        terminal.resize(int(message["cols"]), int(message["rows"]))
+
+        tasks_ = [asyncio.create_task(send()), asyncio.create_task(receive())]
+        try:
+            await asyncio.wait(tasks_, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for task in tasks_:
+                task.cancel()
+            for task in tasks_:
+                with contextlib.suppress(asyncio.CancelledError, WebSocketDisconnect, RuntimeError):
+                    await task
+            terminal.detach(queue)
 
     @app.api_route("/workspaces/{workspace_id}/ports/{port}/http/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
     async def forward_http(workspace_id: str, request: Request, port: int = PathParam(ge=1, le=65535), path: str = ""):

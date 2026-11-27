@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 
@@ -47,6 +47,11 @@ class FakeRunner:
         # Requests the preview route received, as dicts, and what it answers: status, raw headers, body.
         self.previews: list[dict] = []
         self.preview_answer: tuple[int, list[tuple[str, str]], bytes] = (200, [("content-type", "text/html")], b"<p>hello</p>")
+        # Terminals by workspace, and every text frame a terminal socket received. A socket sends
+        # b"replay" first, answers each frame with b"got:" + the frame, and closes with 1000 on
+        # the frame "exit".
+        self.terminals: dict[str, list[dict]] = {}
+        self.terminal_frames: list[str] = []
 
     def _app(self) -> FastAPI:
         app = FastAPI()
@@ -117,6 +122,43 @@ class FakeRunner:
             response = Response(body, status)
             response.raw_headers = [(k.encode(), v.encode()) for k, v in headers] + [(b"content-length", str(len(body)).encode())]
             return response
+
+        @app.post("/workspaces/{workspace_id}/terminals")
+        async def start_terminal(workspace_id: str, request: Request):
+            self.requests.append({"workspace_id": workspace_id, "terminal": await request.json()})
+            terminal = {"id": f"{len(self.terminals.get(workspace_id, [])) + 1:032x}", "started_at": 1.0, "attached": 0}
+            self.terminals.setdefault(workspace_id, []).append(terminal)
+            return {"success": True, "data": terminal}
+
+        @app.get("/workspaces/{workspace_id}/terminals")
+        def list_terminals(workspace_id: str):
+            return {"success": True, "data": {"terminals": self.terminals.get(workspace_id, [])}}
+
+        @app.delete("/workspaces/{workspace_id}/terminals/{terminal_id}")
+        def stop_terminal(workspace_id: str, terminal_id: str):
+            before = self.terminals.get(workspace_id, [])
+            self.terminals[workspace_id] = [t for t in before if t["id"] != terminal_id]
+            if len(before) == len(self.terminals[workspace_id]):
+                return JSONResponse(status_code=404, content={"success": False, "error": {"code": "terminal_not_found", "message": "There is no terminal with this id. It may have ended.", "details": None}})
+            return {"success": True, "data": {"deleted": True}}
+
+        @app.websocket("/workspaces/{workspace_id}/terminals/{terminal_id}")
+        async def attach_terminal(ws: WebSocket, workspace_id: str, terminal_id: str):
+            if terminal_id not in [t["id"] for t in self.terminals.get(workspace_id, [])]:
+                await ws.close(4404)
+                return
+            await ws.accept()
+            await ws.send_bytes(b"replay")
+            try:
+                while True:
+                    text = await ws.receive_text()
+                    self.terminal_frames.append(text)
+                    if text == "exit":
+                        await ws.close(1000, "exited")
+                        return
+                    await ws.send_bytes(b"got:" + text.encode())
+            except WebSocketDisconnect:
+                self.closed.set()
 
         @app.post("/workspaces/{workspace_id}/exec")
         async def exec_command(workspace_id: str, request: Request):

@@ -8,6 +8,23 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
+## 0.14.0 (2026-11-27)
+
+### Added
+
+- Upload files from your computer into a workspace: the Upload button in the explorer, or drop files onto the explorer or onto a folder. Up to 20 files and 25 MB at a time, 5 MB each. A name that is already there is never replaced without asking.
+- New folder in the explorer, beside New file, and both on a folder's row when you point at it.
+- A terminal in the workspace panel: the Terminal button or Ctrl+` opens a shell in the agent's sandbox, in the workspace folder, under the editor. Up to 4 shells per workspace, each in its own tab. A shell keeps running when the page closes or the connection drops; the page reconnects and shows the recent output again. A shell nobody is watching ends after 30 minutes, and any shell after 8 hours.
+- Runner: interactive shells on a pseudo terminal inside the workspace's jail, with job control, resizing and a replay of the last 256 KB of output (`/workspaces/{id}/terminals`, REST plus a WebSocket). Limits are set with `RUNNER_TERMINAL_TIMEOUT`, `RUNNER_TERMINAL_IDLE`, `RUNNER_MAX_TERMINALS_PER_WORKSPACE` and `RUNNER_MAX_TERMINALS`.
+- Api: `/api/agents/{id}/terminals` to open, list and end shells, and a WebSocket at `/api/agents/{id}/terminals/{terminal_id}` that checks the session cookie, the owner and the Origin header before passing frames to the runner.
+
+### Changed
+
+- Previews open as tabs beside your files, and only when there is something to show: when a server in the workspace starts listening on a port, its page opens in a tab of its own (behind the file you are on, if any). A preview tab has Reload, Open in a new tab and Full screen. A tab you close stays closed until that server stops and starts again; the Listening buttons in Processes open it any time. The Editor and Preview switch is gone.
+- Processes, with their output and Stop, moved to a tab in the panel under the editor, beside the terminals.
+- A server started from a terminal counts as listening too, not only one the agent started in the background.
+- New file and New folder open a name box inside the tree, in the folder you are in, as in VS Code. It says as you type when a name is taken or cannot be used, and a name with slashes makes the folders on the way. Enter makes it, Escape cancels.
+
 ## 0.13.1 (2026-11-27)
 
 ### Changed

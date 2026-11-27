@@ -1,9 +1,11 @@
 import Close from '@mui/icons-material/Close'
+import Language from '@mui/icons-material/Language'
 import { Alert, Box, Button, ButtonBase, CircularProgress, IconButton, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import MonacoEditor, { DiffEditor, type OnMount } from '@monaco-editor/react'
 import { useEffect, useRef, useState } from 'react'
 import { MONO, useMode } from '../theme'
-import type { OpenFiles } from './files'
+import { previewKey, previewPort, type OpenFiles } from './files'
+import { PreviewFrame } from './PreviewFrame'
 import './monaco'
 
 const options = {
@@ -16,9 +18,16 @@ const options = {
   renderWhitespace: 'selection' as const,
 }
 
-type Props = { agentId: string; files: OpenFiles; letters: Map<string, string> }
+type Props = {
+  agentId: string
+  files: OpenFiles
+  letters: Map<string, string>
+  /** Ports listening now, and closing a preview tab (which keeps it closed while it listens). */
+  listening: number[]
+  onClosePreview: (port: number) => void
+}
 
-export function Editor({ agentId, files, letters }: Props) {
+export function Editor({ agentId, files, letters, listening, onClosePreview }: Props) {
   const { mode } = useMode()
   const file = files.files.find((f) => f.path === files.active) ?? null
   const [cursor, setCursor] = useState({ line: 1, column: 1 })
@@ -68,6 +77,20 @@ export function Editor({ agentId, files, letters }: Props) {
               </Box>
             )
           })}
+          {files.previews.map((port) => {
+            const selected = files.active === previewKey(port)
+            return (
+              <Box key={port} sx={{ display: 'flex', alignItems: 'center', borderBottom: 2, borderColor: selected ? 'primary.main' : 'transparent', flexShrink: 0 }}>
+                <ButtonBase role="tab" aria-selected={selected} title={`Preview of port ${port}`} onClick={() => files.setActive(previewKey(port))} sx={{ gap: 0.75, pl: 1.5, pr: 0.5, py: 1.25, fontSize: 13, color: selected ? 'text.primary' : 'text.secondary' }}>
+                  <Language sx={{ fontSize: 15, color: listening.includes(port) ? 'primary.main' : 'text.disabled' }} />
+                  localhost:{port}
+                </ButtonBase>
+                <IconButton size="small" aria-label={`Close preview of port ${port}`} onClick={() => onClosePreview(port)} sx={{ mr: 0.5 }}>
+                  <Close sx={{ fontSize: 14 }} />
+                </IconButton>
+              </Box>
+            )
+          })}
         </Box>
         {file && !file.binary && !file.error && (
           <ToggleButtonGroup
@@ -84,7 +107,11 @@ export function Editor({ agentId, files, letters }: Props) {
         )}
       </Box>
 
-      {!file && (
+      {files.previews.map((port) => (
+        <PreviewFrame key={port} agentId={agentId} port={port} listening={listening.includes(port)} shown={files.active === previewKey(port)} />
+      ))}
+
+      {!file && previewPort(files.active) === null && (
         <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', p: 3 }}>
           <Typography color="text.secondary">Open a file from the explorer to read or edit it.</Typography>
         </Box>

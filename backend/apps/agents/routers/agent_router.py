@@ -1,16 +1,18 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
+from starlette.datastructures import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.accounts.models.account import User
-from apps.agents.models.agent import Agent, AgentFile, AgentUpdate, GitFileStatus, GitFileVersions, NewAgent, Process, Processes, ProcessLog, SaveFile, Tree, Usage
+from apps.agents.models.agent import MAX_UPLOAD_BYTES, MAX_UPLOAD_FILES, Agent, AgentFile, AgentUpdate, GitFileStatus, GitFileVersions, NewAgent, NewFolder, Process, Processes, ProcessLog, SaveFile, Tree, Uploaded, Usage
 from apps.agents.models.knowledge import Note, Skills
 from apps.credentials.models.credential import Deleted
 from apps.agents.services import agent_service as service
 from apps.agents.services import knowledge_service
 from core.auth import current_user
 from core.config import get_settings
+from core.errors import AppError
 from core.db import db
 
 # Every route needs a signed-in user, even one added later that forgets to ask for it.
@@ -72,8 +74,42 @@ async def read_file(agent_id: OwnedAgent, path: str = PathQuery) -> AgentFile:
 
 @router.put("/{agent_id}/file", summary="Save a text file, creating its folders", tags=["agents"])
 async def write_file(agent_id: OwnedAgent, body: SaveFile) -> AgentFile:
-    await service.write_file(get_settings(), agent_id, body.path, body.content)
+    await service.write_file(get_settings(), agent_id, body.path, body.content, body.create)
     return AgentFile(path=body.path, content=body.content, encoding="utf-8")
+
+
+@router.post("/{agent_id}/folders", summary="Make a folder, with any folders above it", tags=["agents"])
+async def make_folder(agent_id: OwnedAgent, body: NewFolder) -> NewFolder:
+    await service.make_folder(get_settings(), agent_id, body.path)
+    return body
+
+
+# Room for the multipart boundaries and the form fields around the files.
+_FORM_OVERHEAD = 1024 * 1024
+
+
+@router.post(
+    "/{agent_id}/files",
+    summary="Upload files into a folder of the workspace",
+    description="Multipart form: `files` (one or more), `folder` (empty for the root) and `overwrite` (`true` to replace files that exist; otherwise a 409 `files_exist` lists them).",
+    tags=["agents"],
+)
+async def upload_files(agent_id: OwnedAgent, request: Request) -> Uploaded:
+    # Checked before the body is read, so an oversized upload is refused without spooling it to disk.
+    try:
+        length = int(request.headers.get("content-length", ""))
+    except ValueError:
+        raise AppError(411, "length_required", "The upload must say its size.") from None
+    if length > MAX_UPLOAD_BYTES + _FORM_OVERHEAD:
+        raise AppError(413, "upload_too_large", f"Upload at most {MAX_UPLOAD_BYTES // (1024 * 1024)} MB at a time.")
+    async with request.form(max_files=MAX_UPLOAD_FILES + 1, max_fields=10) as form:
+        files = [(f.filename or "", await f.read()) for f in form.getlist("files") if isinstance(f, UploadFile)]
+        folder = form.get("folder") or ""
+        overwrite = form.get("overwrite") == "true"
+    if not isinstance(folder, str):
+        raise AppError(400, "invalid_path", "The folder must be a path.")
+    written = await service.upload(get_settings(), agent_id, folder, files, overwrite)
+    return Uploaded(written=written)
 
 
 @router.get("/{agent_id}/git/status", summary="Changed files since the last commit", tags=["git"])

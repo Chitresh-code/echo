@@ -61,6 +61,21 @@ class AgentFile(FileContent):
 class SaveFile(BaseModel):
     path: str
     content: str = Field(max_length=MAX_FILE_BYTES)
+    # A new file from the explorer: refused if the path is taken, so two tabs cannot both create it.
+    create: bool = False
+
+
+class NewFolder(BaseModel):
+    path: str
+
+
+# One upload: enough for a handful of documents or images, small enough to hold in memory.
+MAX_UPLOAD_FILES = 20
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+
+
+class Uploaded(BaseModel):
+    written: list[str]
 
 
 class GitFileStatus(BaseModel):

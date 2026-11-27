@@ -39,3 +39,31 @@ export function buildRows(entries: TreeEntry[], letters: Map<string, string>, ex
   walk('', 0)
   return rows
 }
+
+/** Why a name typed in the explorer cannot be made inside `folder`, or null when it can. Slashes
+ *  make folders on the way, so `lib/a.ts` is fine; every folder on the way must not be a file. */
+export function nameProblem(name: string, entries: TreeEntry[], folder: string): string | null {
+  const typed = name.trim()
+  if (!typed) return 'Type a name.'
+  if (typed.startsWith('/')) return 'A name cannot start with /.'
+  if (typed.includes('\\')) return 'Use / to separate folders.'
+  if (/[\u0000-\u001f]/.test(typed)) return 'The name has a character a file name cannot hold.'
+  const parts = typed.replace(/\/+$/, '').split('/')
+  if (parts.some((p) => p === '' || p === '.' || p === '..')) return 'Each part of the name must be a real name, not empty, . or ..'
+  if (parts.some((p) => new TextEncoder().encode(p).length > 255)) return 'The name is too long.'
+  const kinds = new Map(entries.map((e) => [e.path, e.type]))
+  let path = folder
+  for (const [i, part] of parts.entries()) {
+    path = path ? `${path}/${part}` : part
+    const kind = kinds.get(path)
+    if (i === parts.length - 1 && kind) return `${part} already exists here. Pick another name.`
+    if (kind && kind !== 'dir') return `${part} is a file, so it cannot hold others.`
+  }
+  return null
+}
+
+/** The folders that hold `path`, outermost first: ['a', 'a/b'] for a/b/c. */
+export function parents(path: string): string[] {
+  const parts = path.split('/')
+  return parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join('/'))
+}

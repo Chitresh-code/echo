@@ -11,9 +11,11 @@ import type { Agent, GitFileStatus, Storage, Tree } from '../api/types'
 import { Chat } from '../agent/Chat'
 import { ChatList } from '../agent/ChatList'
 import { chatPath, takeOldChat } from '../agent/chats'
+import type { NewKind } from '../agent/Explorer'
 import { useOpenFiles } from '../agent/files'
 import { statusLetters } from '../agent/tree'
 import { WorkspacePanel } from '../agent/WorkspacePanel'
+import { read, write } from '../storage'
 import { DeleteDialog, NameInput } from '../layout/WorkspaceActions'
 import { useWorkspaces } from '../layout/workspaces'
 import { MONO } from '../theme'
@@ -26,22 +28,6 @@ const PANEL_WIDTH = 'echo.panel.width'
 const MIN_WIDTH = 320
 const MAX_SHARE = 0.6
 const DEFAULT_WIDTH = 640
-
-function read(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-function write(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    // Storage refused: the panel keeps its state until reload.
-  }
-}
 
 const clampWidth = (w: number) => Math.round(Math.max(MIN_WIDTH, Math.min(w, window.innerWidth * MAX_SHARE)))
 
@@ -90,7 +76,6 @@ function WorkspacePage({ agentId, chatId }: { agentId: string; chatId: string | 
   const [error, setError] = useState('')
   // Kept apart from error, which a tree refresh clears.
   const [notice, setNotice] = useState('')
-  const [view, setView] = useState<'editor' | 'preview'>('editor')
   const [version, setVersion] = useState(0)
   const [renaming, setRenaming] = useState(false)
   const [menu, setMenu] = useState<HTMLElement | null>(null)
@@ -165,19 +150,16 @@ function WorkspacePage({ agentId, chatId }: { agentId: string; chatId: string | 
   }
 
   const openFile = (path: string) => {
-    setView('editor')
     showPanel(true)
     files.open(path, letters.has(path))
   }
 
-  async function create(path: string) {
-    try {
-      await api(`/api/agents/${agentId}/file`, { method: 'PUT', body: { path, content: '' } })
-      await refreshTree()
-      files.open(path, false)
-    } catch (e) {
-      setError(errorText(e))
-    }
+  // Errors go back to the explorer's name box, which says what to change.
+  async function create(kind: NewKind, path: string) {
+    if (kind === 'folder') await api(`/api/agents/${agentId}/folders`, { method: 'POST', body: { path } })
+    else await api(`/api/agents/${agentId}/file`, { method: 'PUT', body: { path, content: '', create: true } })
+    await refreshTree()
+    if (kind === 'file') files.open(path, false)
   }
 
   // A running turn goes on without this page, and stays in the chat list to come back to.
@@ -319,8 +301,7 @@ function WorkspacePage({ agentId, chatId }: { agentId: string; chatId: string | 
                 storage={storage}
                 files={files}
                 version={version}
-                view={view}
-                onView={setView}
+                open={panelOpen}
                 onOpen={openFile}
                 onRefresh={afterTurn}
                 onCreate={create}
