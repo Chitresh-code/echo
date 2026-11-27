@@ -20,6 +20,9 @@ from apps.agents.models.agent import (
     GitFileStatus,
     GitFileVersions,
     NewAgent,
+    Process,
+    Processes,
+    ProcessLog,
     Tree,
     TreeEntry,
     Usage,
@@ -30,6 +33,7 @@ from apps.agents.services.paths import check_agent_id, safe_relpath
 from apps.chat.services import turn_service
 from core.config import Settings
 from core.errors import AppError
+from sandbox import processes
 from sandbox.runner_sandbox import RunnerSandbox, raise_for_runner_error, runner_client
 
 logger = logging.getLogger(__name__)
@@ -104,6 +108,18 @@ async def usage(settings: Settings, agent_id: str) -> Usage:
         response = await client.get(f"/workspaces/{check_agent_id(agent_id)}/usage")
         await raise_for_runner_error(response)
     return Usage(**response.json()["data"])
+
+
+async def list_processes(settings: Settings, agent_id: str) -> Processes:
+    return Processes(**await processes.list_all(settings.runner_socket, check_agent_id(agent_id)))
+
+
+async def process_logs(settings: Settings, agent_id: str, name: str, tail: int) -> ProcessLog:
+    return ProcessLog(**await processes.logs(settings.runner_socket, check_agent_id(agent_id), name, tail))
+
+
+async def stop_process(settings: Settings, agent_id: str, name: str) -> Process:
+    return Process(**await processes.stop(settings.runner_socket, check_agent_id(agent_id), name))
 
 
 async def update_agent(db: AsyncSession, owner_id: str, agent_id: str, change: AgentUpdate) -> Agent:

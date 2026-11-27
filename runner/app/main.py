@@ -3,6 +3,7 @@ container's user can open, and no network port, so neither a jail nor anything o
 can ask it to run a command."""
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -12,14 +13,21 @@ from collections.abc import AsyncIterator
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Path as PathParam, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from app import jail, usage
+from app import jail, net, preview, processes, usage
 
 logger = logging.getLogger("runner")
+
+
+class ProcessRequest(BaseModel):
+    name: str
+    command: str = Field(max_length=100_000)
+    cwd: str | None = None
+    env: dict[str, str] | None = None
 
 
 class ExecRequest(BaseModel):
@@ -36,7 +44,14 @@ def _error(status: int, code: str, message: str) -> JSONResponse:
 
 
 def create_app(settings: jail.Settings) -> FastAPI:
-    app = FastAPI(title="Echo runner", docs_url=None, redoc_url=None, openapi_url=None)
+    registry = processes.Registry(settings)
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app: FastAPI):
+        yield
+        await registry.stop_all()
+
+    app = FastAPI(title="Echo runner", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     # Command files are removed after each run; clearing the directory at startup removes any
     # left by a crash.
     shutil.rmtree(jail.commands_dir(settings), ignore_errors=True)
@@ -44,7 +59,7 @@ def create_app(settings: jail.Settings) -> FastAPI:
 
     @app.exception_handler(jail.JailError)
     async def jail_error(request: Request, exc: jail.JailError):
-        return _error(400, exc.code, exc.message)
+        return _error(exc.status, exc.code, exc.message)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
@@ -55,7 +70,8 @@ def create_app(settings: jail.Settings) -> FastAPI:
         logger.error("Unhandled exception", exc_info=exc)
         return _error(500, "runner_error", "The runner failed.")
 
-    def prepare(workspace_id: str, command: str, timeout: int, cwd=None, env=None, fsize_mb: int = 1024) -> tuple[list[str], Path]:
+    async def prepare(workspace_id: str, command: str, timeout: int, cwd=None, env=None, fsize_mb: int = 1024) -> tuple[list[str], Path]:
+        await net.ensure(settings, workspace_id)
         script = jail.write_script(settings, command)
         try:
             return jail.build_argv(settings, workspace_id, script, timeout, cwd, env, fsize_mb=fsize_mb), script
@@ -64,7 +80,7 @@ def create_app(settings: jail.Settings) -> FastAPI:
             raise
 
     async def run_to_end(workspace_id: str, command: str) -> jail.Exit:
-        argv, script = prepare(workspace_id, command, 60)
+        argv, script = await prepare(workspace_id, command, 60)
         result = None
         try:
             async for item in jail.run(argv, 60):
@@ -118,11 +134,14 @@ def create_app(settings: jail.Settings) -> FastAPI:
         folders = [jail.workspace_dir(settings, workspace_id), jail.home_dir(settings, workspace_id)]
         if not any(f.exists() for f in folders):
             return _error(404, "workspace_not_found", "There is no workspace with this id.")
+        # Before the folders go, so no process is left writing into them.
+        await registry.stop_workspace(workspace_id)
         for folder in folders:
             # rmtree removes a link the agent made instead of following it. Off the event loop,
             # since a large workspace takes a while.
             await asyncio.to_thread(shutil.rmtree, folder, ignore_errors=True)
         usage.forget(workspace_id)
+        await net.remove(settings, workspace_id)
         if any(f.exists() for f in folders):
             logger.error("Workspace %s was not fully removed", workspace_id)
             return _error(500, "workspace_delete_failed", "The workspace could not be fully removed.")
@@ -137,7 +156,7 @@ def create_app(settings: jail.Settings) -> FastAPI:
         # Over the limit the jail can still read and delete, so the agent can clean up, but not write.
         full = used > limit
         # Built before the response starts, so a bad request is a 400, not a broken stream.
-        argv, script = prepare(workspace_id, body.command, timeout, body.cwd, body.env, fsize_mb=0 if full else 1024)
+        argv, script = await prepare(workspace_id, body.command, timeout, body.cwd, body.env, fsize_mb=0 if full else 1024)
 
         async def lines() -> AsyncIterator[bytes]:
             # When the client disconnects, Starlette cancels this generator, and closing jail.run
@@ -159,6 +178,47 @@ def create_app(settings: jail.Settings) -> FastAPI:
                 task.add_done_callback(tasks.discard)
 
         return StreamingResponse(lines(), media_type="application/x-ndjson")
+
+    def check_workspace(workspace_id: str) -> None:
+        if not jail.workspace_dir(settings, workspace_id).is_dir():
+            raise jail.JailError("workspace_not_found", "There is no workspace with this id.", 404)
+
+    @app.post("/workspaces/{workspace_id}/processes")
+    async def start_process(workspace_id: str, body: ProcessRequest):
+        check_workspace(workspace_id)
+        used, limit = await usage.used(settings, workspace_id), usage.limit(settings)
+        # The same rule as exec: over the limit a process can read and delete, but not write.
+        full = used > limit
+
+        async def argv_for(timeout: int):
+            return await prepare(workspace_id, body.command, timeout, body.cwd, body.env, fsize_mb=0 if full else 1024)
+
+        note = usage.over_limit_message(used, limit) if full else ""
+        process = await registry.start(workspace_id, body.name, body.command, argv_for, body.cwd, note)
+        return {"success": True, "data": process.to_json()}
+
+    @app.get("/workspaces/{workspace_id}/processes")
+    def list_processes(workspace_id: str):
+        check_workspace(workspace_id)
+        return {"success": True, "data": registry.list(workspace_id)}
+
+    @app.get("/workspaces/{workspace_id}/processes/{name}/logs")
+    def process_logs(workspace_id: str, name: str, tail: int = 200):
+        check_workspace(workspace_id)
+        process = registry.get(workspace_id, name)
+        return {"success": True, "data": {"name": process.name, "log": processes.tail(process.log_path, tail)}}
+
+    @app.delete("/workspaces/{workspace_id}/processes/{name}")
+    async def stop_process(workspace_id: str, name: str):
+        check_workspace(workspace_id)
+        process = registry.get(workspace_id, name)
+        await registry.stop(process)
+        return {"success": True, "data": process.to_json()}
+
+    @app.api_route("/workspaces/{workspace_id}/ports/{port}/http/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+    async def forward_http(workspace_id: str, request: Request, port: int = PathParam(ge=1, le=65535), path: str = ""):
+        check_workspace(workspace_id)
+        return await preview.forward(settings, workspace_id, port, request)
 
     return app
 

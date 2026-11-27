@@ -33,9 +33,10 @@ PIDS_MAX = 1024
 class JailError(Exception):
     """A request the runner refuses before starting a jail. `code` is stable for callers."""
 
-    def __init__(self, code: str, message: str):
+    def __init__(self, code: str, message: str, status: int = 400):
         self.code = code
         self.message = message
+        self.status = status
         super().__init__(message)
 
 
@@ -47,7 +48,15 @@ class Settings:
     memory_mb: int
     # Workspace plus home, per agent.
     disk_mb: int = 2048
+    # Long-running processes (app/processes.py): their time limit and how many may run.
+    process_timeout: int = 7200
+    max_processes_per_workspace: int = 3
+    max_processes: int = 20
     nsjail: str = "nsjail"
+    # Tools for the per-workspace network namespaces (app/net.py); tests replace them.
+    nsenter: str = "nsenter"
+    ip: str = "ip"
+    netns_dir: Path = Path("/run/netns")
 
 
 def load_settings(env: Mapping[str, str] = os.environ) -> Settings:
@@ -57,6 +66,9 @@ def load_settings(env: Mapping[str, str] = os.environ) -> Settings:
         timeout_max=int(env.get("RUNNER_TIMEOUT_MAX", "1800")),
         memory_mb=int(env.get("RUNNER_JAIL_MEMORY_MB", "4096")),
         disk_mb=int(env.get("RUNNER_AGENT_DISK_MB", "2048")),
+        process_timeout=int(env.get("RUNNER_PROCESS_TIMEOUT", "7200")),
+        max_processes_per_workspace=int(env.get("RUNNER_MAX_PROCESSES_PER_WORKSPACE", "3")),
+        max_processes=int(env.get("RUNNER_MAX_PROCESSES", "20")),
     )
 
 
@@ -138,7 +150,10 @@ def build_argv(
     if lib64_exists is None:
         lib64_exists = os.path.isdir("/lib64")
 
+    # nsenter joins only the workspace's network namespace. `ip netns exec` would also remount /sys
+    # in a new mount namespace, hiding the cgroup tree nsjail needs for its limits.
     argv = [
+        settings.nsenter, f"--net={settings.netns_dir}/echo-{check_id(workspace_id)}", "--",
         settings.nsjail, "-Mo", "--really_quiet",
         "-u", f"{JAIL_UID}:{JAIL_UID}", "-g", f"{JAIL_UID}:{JAIL_UID}",
         "-t", str(timeout),
@@ -182,10 +197,13 @@ def build_argv(
     for pair in _check_env(env):
         argv += ["-E", pair]
     if settings.network:
-        # Share the sandbox container's network, where the firewall on uid 1000 applies. Without
-        # this the jail gets an empty network namespace and no internet.
-        # shortcut: one shared network for every jail, so loopback is blocked and outbound is open to any public address; a network namespace per workspace fixes the first, abuse controls the second.
-        argv.append("--disable_clone_newnet")
+        # The workspace's resolver is its gateway address, where dnsmasq answers; the container's
+        # own resolv.conf names Docker's resolver on a loopback the namespace cannot reach.
+        argv += ["-R", f"{settings.data_dir}/net/resolv/{workspace_id}.conf:/etc/resolv.conf"]
+    # Stay in the workspace's namespace, entered above, instead of an empty one per jail, so every
+    # jail of a workspace shares its loopback and its route out.
+    # shortcut: outbound is open to any public address; abuse controls (rate limits, blocked ports) come with hardening.
+    argv.append("--disable_clone_newnet")
     # The command is only ever read by the shell inside the jail, never parsed outside it.
     argv += ["--", "/bin/sh", str(script)]
     return argv

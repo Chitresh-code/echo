@@ -13,7 +13,7 @@ FROM node:22-bookworm-slim AS node
 # installed here are what the agent can use inside a workspace.
 FROM python:3.12-slim-bookworm AS base
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      libprotobuf32 libnl-route-3-200 iptables git curl ca-certificates ripgrep build-essential \
+      libprotobuf32 libnl-route-3-200 iptables iproute2 dnsmasq-base git curl ca-certificates ripgrep build-essential \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=nsjail /nsjail /usr/local/bin/nsjail
 COPY --from=node /usr/local/bin/node /usr/local/bin/node

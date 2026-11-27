@@ -16,7 +16,7 @@ import httpx
 import pytest
 import uvicorn
 
-from app import jail, main
+from app import jail, main, net
 
 pytestmark = pytest.mark.jail
 
@@ -37,7 +37,10 @@ def live_settings():
 def client(live_settings):
     from fastapi.testclient import TestClient
 
-    return TestClient(main.create_app(live_settings))
+    # Entered, so every request shares one event loop as under uvicorn; a process's output task
+    # would otherwise die with the loop of the request that started it.
+    with TestClient(main.create_app(live_settings)) as c:
+        yield c
 
 
 def new_ws(client) -> str:
@@ -131,6 +134,70 @@ def test_private_and_metadata_addresses_refused(client, local_server, target):
     out, _, _ = run(client, ws, f"curl -s -o /dev/null -m 3 -w '%{{http_code}}' http://{target}/; echo \" $?\"")
     code, curl_exit = out.split()
     assert code == "000" and curl_exit != "0"
+
+
+def _in_background(client, ws, command):
+    """Run a command in another thread, for a server that must be up while other commands run."""
+    thread = threading.Thread(target=run, args=(client, ws, command, 60), daemon=True)
+    thread.start()
+    return thread
+
+
+def _wait_for(client, ws, url):
+    out, _, _ = run(client, ws, f"for i in $(seq 50); do curl -s -o /dev/null -m 1 {url} && echo up && break; sleep 0.2; done")
+    return out.strip() == "up"
+
+
+def test_a_server_is_reachable_from_the_next_command(client):
+    ws = new_ws(client)
+    # Bound to loopback only, as dev servers usually are.
+    thread = _in_background(client, ws, "cd /tmp && timeout 20 python3 -m http.server 8123 --bind 127.0.0.1")
+    assert _wait_for(client, ws, "http://localhost:8123/")
+    run(client, ws, "pkill -f 'http.server 8123' || true")
+    thread.join(30)
+
+
+def test_workspaces_cannot_reach_each_other(client, live_settings):
+    a, b = new_ws(client), new_ws(client)
+    thread = _in_background(client, a, "cd /tmp && timeout 20 python3 -m http.server 8124 --bind 0.0.0.0")
+    assert _wait_for(client, a, "http://localhost:8124/")
+    _, a_inside = net.addresses(net.index_of(live_settings, a))
+    for url in ("http://localhost:8124/", f"http://{a_inside}:8124/"):
+        out, _, _ = run(client, b, f"curl -s -o /dev/null -m 3 -w '%{{http_code}}' {url}; echo \" $?\"")
+        code, curl_exit = out.split()
+        assert code == "000" and curl_exit != "0", url
+    run(client, a, "pkill -f 'http.server 8124' || true")
+    thread.join(30)
+
+
+def test_the_gateway_answers_only_dns(client, live_settings):
+    ws = new_ws(client)
+    gateway, _ = net.addresses(net.index_of(live_settings, ws))
+    out, err, _ = run(client, ws, f"getent hosts pypi.org >/dev/null && echo dns; curl -s -o /dev/null -m 3 http://{gateway}/; echo \" $?\"")
+    assert out.split() == ["dns", "28"], err  # 28: timed out, since anything but DNS is dropped
+
+
+def test_a_jail_cannot_change_its_network(client):
+    ws = new_ws(client)
+    out, _, _ = run(client, ws, "ip link set eth0 down 2>/dev/null; echo $?; ip addr add 10.89.255.250/32 dev eth0 2>/dev/null; echo $?")
+    assert "0" not in out.split()
+    out, _, _ = run(client, ws, "curl -s -o /dev/null -w '%{http_code}' https://pypi.org/simple/pip/")
+    assert out == "200"
+
+
+def test_namespace_is_remade_after_it_is_gone(client, live_settings):
+    ws = new_ws(client)
+    # As after a container restart, which empties /run/netns.
+    subprocess.run(["ip", "netns", "delete", net.name(ws)], check=True)
+    out, err, _ = run(client, ws, "curl -s -o /dev/null -w '%{http_code}' https://pypi.org/simple/pip/")
+    assert out == "200", err
+
+
+def test_deleting_the_workspace_removes_its_namespace(client, live_settings):
+    ws = new_ws(client)
+    assert net.path(live_settings, ws).exists()
+    assert client.delete(f"/workspaces/{ws}").status_code == 200
+    assert not net.path(live_settings, ws).exists() and ws not in json.loads((DATA / "net" / "index.json").read_text())
 
 
 def test_webassembly_runs(client):
@@ -257,3 +324,150 @@ def test_full_workspace_can_delete_but_not_write(live_settings):
     usage.forget(ws)
     out, err, end = run(client, ws, "echo ok > small && cat small")
     assert out.strip() == "ok" and "files cannot be written" not in err
+
+
+def _processes(client, ws):
+    return client.get(f"/workspaces/{ws}/processes").json()["data"]
+
+
+def _wait_for_port(client, ws, port, seconds=15):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if port in (data := _processes(client, ws))["ports"]:
+            return data
+        time.sleep(0.2)
+    raise AssertionError(data)
+
+
+def test_a_process_outlives_its_request_and_is_reached_by_commands(client, live_settings):
+    ws = new_ws(client)
+    r = client.post(f"/workspaces/{ws}/processes", json={"name": "web", "command": "echo starting; exec python3 -m http.server 8130 --bind 127.0.0.1"})
+    assert r.status_code == 200, r.text
+    data = _wait_for_port(client, ws, 8130)
+    assert data["processes"][0]["status"] == "running"
+    out, _, _ = run(client, ws, "curl -s -o /dev/null -w '%{http_code}' http://localhost:8130/")
+    assert out == "200"
+    log = client.get(f"/workspaces/{ws}/processes/web/logs").json()["data"]["log"]
+    assert "starting" in log and "GET / " in log
+    # The log is the runner's, outside anything the jail can see.
+    assert (live_settings.data_dir / "processes" / ws / "web.log").stat().st_uid == 0
+    r = client.delete(f"/workspaces/{ws}/processes/web")
+    assert r.json()["data"]["status"] == "exited"
+    assert _processes(client, ws)["ports"] == []
+    out, _, _ = run(client, ws, "curl -s -o /dev/null -m 2 -w '%{http_code}' http://localhost:8130/; echo \" $?\"")
+    assert out.split()[0] == "000"
+
+
+def test_process_limit_and_workspace_delete(client, live_settings):
+    ws = new_ws(client)
+    for n in range(live_settings.max_processes_per_workspace):
+        assert client.post(f"/workspaces/{ws}/processes", json={"name": f"p{n}", "command": "sleep 600"}).status_code == 200
+    r = client.post(f"/workspaces/{ws}/processes", json={"name": "more", "command": "sleep 600"})
+    assert r.status_code == 429
+    assert client.delete(f"/workspaces/{ws}").status_code == 200
+    # nsjail and everything in the jail are gone, not just the table entry.
+    cmdlines = []
+    for proc in Path("/proc").glob("[0-9]*"):
+        try:
+            cmdlines.append((proc / "cmdline").read_bytes())
+        except OSError:
+            pass
+    assert not any(b"sleep\x00600" in c for c in cmdlines)
+    assert not (live_settings.data_dir / "processes" / ws).exists()
+
+
+def test_full_workspace_starts_a_process_that_cannot_write():
+    from fastapi.testclient import TestClient
+
+    from app import usage
+
+    with TestClient(main.create_app(jail.Settings(data_dir=DATA, network=True, timeout_max=60, memory_mb=1024, disk_mb=1))) as client:
+        _full_workspace_process(client, usage)
+
+
+def _full_workspace_process(client, usage):
+    ws = new_ws(client)
+    run(client, ws, "head -c 2000000 /dev/zero > big")
+    usage.forget(ws)
+    r = client.post(f"/workspaces/{ws}/processes", json={"name": "w", "command": "echo more > other; echo exit=$?"})
+    assert r.status_code == 200
+    deadline = time.monotonic() + 10
+    while _processes(client, ws)["processes"][0]["status"] == "running":
+        assert time.monotonic() < deadline
+        time.sleep(0.1)
+    log = client.get(f"/workspaces/{ws}/processes/w/logs").json()["data"]["log"]
+    assert "files cannot be written" in log and "exit=0" not in log
+
+
+# A server that echoes POST bodies and the Host it saw, sets two cookies and sends a large body.
+ECHO_SERVER = r'''
+import sys
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.startswith("/big"):
+            self.send_response(200)
+            self.send_header("Content-Length", str(20 * 1024 * 1024))
+            self.end_headers()
+            for _ in range(20):
+                self.wfile.write(b"x" * 1024 * 1024)
+            return
+        body = f"{self.path} {self.headers['Host']}".encode()
+        self.send_response(200)
+        self.send_header("Set-Cookie", "a=1")
+        self.send_header("Set-Cookie", "b=2")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers["Content-Length"]))
+        self.send_response(201)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+import socket
+ThreadingHTTPServer.address_family = socket.AF_INET6 if ":" in sys.argv[1] else socket.AF_INET
+ThreadingHTTPServer((sys.argv[1], int(sys.argv[2])), H).serve_forever()
+'''
+
+
+def _serve(client, ws, port, bind="127.0.0.1"):
+    run(client, ws, f"cat > ~/server.py <<'PY'\n{ECHO_SERVER}\nPY")
+    assert client.post(f"/workspaces/{ws}/processes", json={"name": "web", "command": f"exec python3 ~/server.py {bind} {port}"}).status_code == 200
+    _wait_for_port(client, ws, port)
+
+
+def test_preview_forwards_to_a_loopback_only_server(client):
+    ws = new_ws(client)
+    _serve(client, ws, 8140)
+    base = f"/workspaces/{ws}/ports/8140/http"
+    r = client.get(f"{base}/a/b%2Fc?x=1", headers={"Host": "localhost:8140"})
+    assert r.status_code == 200 and r.text == "/a/b%2Fc?x=1 localhost:8140"
+    assert r.headers.get_list("set-cookie") == ["a=1", "b=2"]
+    r = client.post(f"{base}/form", content=b"hello" * 1000)
+    assert r.status_code == 201 and r.content == b"hello" * 1000
+    with client.stream("GET", f"{base}/big") as r:
+        assert r.status_code == 200 and sum(len(chunk) for chunk in r.iter_raw()) == 20 * 1024 * 1024
+
+
+def test_preview_reaches_a_server_on_ipv6_loopback(client):
+    ws = new_ws(client)
+    _serve(client, ws, 8141, bind="::1")
+    assert client.get(f"/workspaces/{ws}/ports/8141/http/").status_code == 200
+
+
+def test_preview_with_nothing_listening_and_no_thread_left_inside(client, live_settings):
+    ws = new_ws(client)
+    r = client.get(f"/workspaces/{ws}/ports/8142/http/")
+    assert r.status_code == 502 and r.json()["error"]["code"] == "upstream_unreachable"
+    # Another workspace's server on the same port is not reached.
+    other = new_ws(client)
+    _serve(client, other, 8142)
+    assert client.get(f"/workspaces/{ws}/ports/8142/http/").status_code == 502
+    assert client.get(f"/workspaces/{other}/ports/8142/http/").status_code == 200
+    # Every thread of the runner is still in the runner's own network namespace.
+    own = os.readlink("/proc/self/ns/net")
+    assert all(os.readlink(t / "ns" / "net") == own for t in Path("/proc/self/task").iterdir())

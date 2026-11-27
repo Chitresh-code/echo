@@ -15,9 +15,12 @@ def _pairs(argv, flag):
 def test_identity_mounts_and_command(settings, ws_id):
     argv = jail.build_argv(settings, ws_id, SCRIPT, 10, lib64_exists=False)
     ws = f"{settings.data_dir}/workspaces/{ws_id}"
-    assert argv[:3] == ["nsjail", "-Mo", "--really_quiet"]
+    assert argv[:6] == ["nsenter", f"--net=/run/netns/echo-{ws_id}", "--", "nsjail", "-Mo", "--really_quiet"]
     assert _pairs(argv, "-u") == ["1000:1000"] and _pairs(argv, "-g") == ["1000:1000"]
-    assert _pairs(argv, "-R") == ["/bin", "/lib", "/usr", "/etc", "/dev/null", "/dev/zero", "/dev/random", "/dev/urandom", str(SCRIPT)]
+    assert _pairs(argv, "-R") == [
+        "/bin", "/lib", "/usr", "/etc", "/dev/null", "/dev/zero", "/dev/random", "/dev/urandom", str(SCRIPT),
+        f"{settings.data_dir}/net/resolv/{ws_id}.conf:/etc/resolv.conf",
+    ]
     assert _pairs(argv, "-B") == [ws, f"{settings.data_dir}/homes/{ws_id}:/home/echo"]
     assert _pairs(argv, "--cwd") == [ws]
     assert _pairs(argv, "-t") == ["10"] and _pairs(argv, "--rlimit_cpu") == ["10"]
@@ -46,10 +49,14 @@ def test_bad_env_rejected(settings, ws_id, env):
     assert e.value.code == "invalid_env"
 
 
-def test_network_flag(settings, ws_id):
-    assert "--disable_clone_newnet" in jail.build_argv(settings, ws_id, SCRIPT, 5)
+def test_jails_stay_in_the_workspace_namespace(settings, ws_id):
+    # With or without the internet, every jail of a workspace shares its namespace and loopback.
     off = jail.Settings(settings.data_dir, network=False, timeout_max=30, memory_mb=4096)
-    assert "--disable_clone_newnet" not in jail.build_argv(off, ws_id, SCRIPT, 5)
+    for s in (settings, off):
+        argv = jail.build_argv(s, ws_id, SCRIPT, 5)
+        assert argv[1] == f"--net=/run/netns/echo-{ws_id}" and "--disable_clone_newnet" in argv
+    # Without the internet there is no gateway resolver to point at.
+    assert not any(r.endswith(":/etc/resolv.conf") for r in _pairs(jail.build_argv(off, ws_id, SCRIPT, 5), "-R"))
 
 
 def test_cwd_inside_workspace(settings, ws_id):

@@ -77,3 +77,24 @@ class Usage(BaseModel):
 
     used_bytes: int
     limit_bytes: int
+
+
+class Process(BaseModel):
+    """A long-running process in the agent's workspace, such as a dev server."""
+
+    name: str
+    command: str
+    cwd: str | None
+    status: Literal["running", "exited"]
+    exit_code: int | None
+    started_at: float = Field(description="Unix time it started")
+
+
+class Processes(BaseModel):
+    processes: list[Process]
+    ports: list[int] = Field(description="TCP ports listening in the workspace, whichever process opened them")
+
+
+class ProcessLog(BaseModel):
+    name: str
+    log: str = Field(description="The last lines of the process's output")

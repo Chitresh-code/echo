@@ -11,12 +11,14 @@ from apps.accounts.services.oidc import state_cookie_key
 from apps.agents.routers.agent_router import router as agent_router
 from apps.chat.routers.chat_router import router as chat_router
 from apps.credentials.routers.credential_router import router as credential_router
+from apps.preview.routers.preview_router import router as preview_router
 from core.auth import check_origin
 from core.config import get_settings
 from core.error_handlers import register_error_handlers
 from core.log_config import setup_logging
 from core.request_id import RequestIdMiddleware
-from core.web_app import WebHeadersMiddleware, serve_web_app
+from core.preview_host import PreviewHostMiddleware
+from core.web_app import WebHeadersMiddleware, csp, serve_web_app
 from core.responses import EnvelopeJSONResponse
 from lifespan import lifespan
 
@@ -50,7 +52,10 @@ def create_app(web_dir: Path | None = None) -> FastAPI:
         SessionMiddleware, secret_key=state_cookie_key(settings), session_cookie="echo_signin", max_age=600,
         path="/api/auth", same_site="lax", https_only=settings.public_url.startswith("https://"),
     )
-    app.add_middleware(WebHeadersMiddleware)
+    app.add_middleware(WebHeadersMiddleware, csp=csp(settings.preview_url))
+    # Outside the app's own headers and inside the request id: a preview host is answered here
+    # and never reaches a route, the sign-in session or the app's CSP.
+    app.add_middleware(PreviewHostMiddleware, preview_url=settings.preview_url)
     app.add_middleware(RequestIdMiddleware)
     register_error_handlers(app)
 
@@ -62,6 +67,7 @@ def create_app(web_dir: Path | None = None) -> FastAPI:
     app.include_router(credential_router)
     app.include_router(agent_router)
     app.include_router(chat_router)
+    app.include_router(preview_router)
 
     # The mount only matches /docs/..., so without this a bare /docs would reach the web app's
     # catch-all and show the app instead of the guide.

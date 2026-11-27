@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from apps.accounts.models.account import User
-from apps.agents.models.agent import Agent, AgentFile, AgentUpdate, GitFileStatus, GitFileVersions, NewAgent, SaveFile, Tree, Usage
+from apps.agents.models.agent import Agent, AgentFile, AgentUpdate, GitFileStatus, GitFileVersions, NewAgent, Process, Processes, ProcessLog, SaveFile, Tree, Usage
 from apps.agents.models.knowledge import Note, Skills
 from apps.credentials.models.credential import Deleted
 from apps.agents.services import agent_service as service
@@ -84,6 +84,21 @@ async def git_status(agent_id: OwnedAgent) -> list[GitFileStatus]:
 @router.get("/{agent_id}/git/file", summary="A file's last committed and current versions, for a diff", tags=["git"])
 async def git_file_versions(agent_id: OwnedAgent, path: str = PathQuery) -> GitFileVersions:
     return await service.git_file_versions(get_settings(), agent_id, path)
+
+
+@router.get("/{agent_id}/processes", summary="The agent's running and exited processes, and the ports listening in its workspace", tags=["processes"])
+async def list_processes(agent_id: OwnedAgent) -> Processes:
+    return await service.list_processes(get_settings(), agent_id)
+
+
+@router.get("/{agent_id}/processes/{name}/logs", summary="The end of a process's output", tags=["processes"])
+async def process_logs(agent_id: OwnedAgent, name: str, tail: int = Query(200, ge=1, le=1000)) -> ProcessLog:
+    return await service.process_logs(get_settings(), agent_id, name, tail)
+
+
+@router.delete("/{agent_id}/processes/{name}", summary="Stop a process", tags=["processes"])
+async def stop_process(agent_id: OwnedAgent, name: str) -> Process:
+    return await service.stop_process(get_settings(), agent_id, name)
 
 
 @router.get("/{agent_id}/skills", summary="The agent's skills, and any the harness would skip or warns about", tags=["knowledge"])

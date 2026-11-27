@@ -12,6 +12,7 @@ from strands_harness import create_harness
 from apps.agents.models.knowledge import Skill
 from apps.chat.services import history
 from apps.chat.services.delegation import Delegation
+from apps.chat.services.process_tool import process_tool
 from core.config import Settings
 from sandbox.runner_sandbox import WORKSPACES_ROOT, RunnerSandbox
 
@@ -60,7 +61,8 @@ def shared_rules(root: str, settings: Settings) -> str:
     minutes = settings.turn_timeout // 60
     return f"""# The sandbox
  - Your workspace is the git repository at {root}. Commands run in an isolated Linux sandbox with the workspace as the working directory. Each shell call starts fresh, so chain dependent steps with && or use absolute paths.
- - The internet is reachable; localhost and private addresses are not, so a server you start cannot be opened, by you or the user. Nothing started in the background outlives its command, so do not start servers or watchers.
+ - The workspace has a network of its own: the internet is reachable, private addresses are not, and localhost reaches what this workspace runs and nothing else.
+ - Nothing started in the background of a shell command outlives it. Start dev servers and watchers with the process tool instead, never with & or nohup, binding them to localhost or 0.0.0.0, and stop them when they are no longer needed. The user can open any listening port in the Preview panel, so tell them which port to open.
  - A command stops after {settings.command_timeout} seconds unless you pass a longer timeout, up to {settings.command_timeout_max}; pass one for installs and builds. Your whole turn stops after {minutes} minutes.
  - Install project dependencies inside the project (a .venv, node_modules) and keep them out of git. Tools for yourself go in your home folder (pip install --user, npm install -g) and persist between commands.
 
@@ -91,7 +93,8 @@ def shell_tool(settings: Settings):
             "error (stderr) and exit_code (non-zero means it failed). Each call is a fresh shell: variables and the working "
             f"directory do not carry over. A command stops after `timeout` seconds, {settings.command_timeout} by default and "
             f"at most {settings.command_timeout_max}; ask for more only for installs and builds that need it. The internet is "
-            "reachable, localhost and private addresses are not, and nothing started in the background survives the command."
+            "reachable and private addresses are not. Localhost reaches servers this workspace runs, but nothing started in the "
+            "background survives the command: use the process tool for servers and watchers."
         ),
     )
 
@@ -120,7 +123,7 @@ def build_agent(
         memory={"dir": str(settings.data_dir / "memory" / workspace_id)},
         # A path in the sandbox container; the skills plugin reads it through the sandbox.
         skills=[f"{root}/.agent/skills"],
-        tools=[shell_tool(settings)],
+        tools=[shell_tool(settings), process_tool(settings, workspace_id)],
         builtin_tools={
             "shell": False,
             # curl in the jail, behind its firewall. The "direct" transport would fetch from the api

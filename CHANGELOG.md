@@ -8,6 +8,23 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
+## 0.10.0 (in progress)
+
+### Added
+
+- The runner keeps long-running processes per workspace: `POST /workspaces/{id}/processes` starts a named command (a dev server, a watcher) that outlives the request, `GET` lists them with the ports listening in the workspace, `GET .../{name}/logs` returns the end of its log and `DELETE .../{name}` stops it. Each is a jail with the usual limits and a 2 hour time limit (`RUNNER_PROCESS_TIMEOUT`), at most 3 per workspace and 20 per sandbox (`RUNNER_MAX_PROCESSES_PER_WORKSPACE`, `RUNNER_MAX_PROCESSES`). Logs are kept to about 1 MB under `/data/processes`. Deleting a workspace stops its processes.
+- The runner forwards HTTP to a server in a workspace: `/workspaces/{id}/ports/{port}/http/{path}` passes the request (any method, headers, body) to that port on the workspace's own loopback, IPv4 or IPv6, and streams the response back. It answers 404 `no_network` when nothing has run in the workspace and 502 `upstream_unreachable` when nothing listens on the port. It only ever reaches the named workspace's loopback. WebSocket upgrades are not forwarded.
+- The agent has a `process` tool to start, stop, list and read the logs of dev servers and watchers in its workspace. Starting one waits two seconds and returns its first log lines and the listening ports, so a crash or a wrong port shows at once. Subagents have it too, and the chat shows the process name on its tool row.
+- `GET /api/agents/{id}/processes`, `GET /api/agents/{id}/processes/{name}/logs` and `DELETE /api/agents/{id}/processes/{name}` list an agent's processes and listening ports, show a process's output and stop it.
+- Previews of the agents' dev servers, turned on with `ECHO_PREVIEW_URL` (for example `http://preview.localhost:8000`). `POST /api/agents/{id}/preview` with a port returns a link to `<agent>-<port>.<preview domain>`, good for one minute, which signs the browser in to that one preview with an `echo_preview` cookie (HttpOnly, Secure, SameSite=None, Partitioned, 8 hours) and then shows the server's pages. A preview host only ever serves the preview: it never reaches the api or the app, the cookie is never passed to the agent's server, a server's own `echo_preview` cookie is dropped, the server sees `Host: localhost:<port>`, only Echo may frame it, and request bodies are capped at 10 MB. Each request checks the agent still belongs to the user. WebSockets are refused on preview hosts.
+
+### Changed
+
+- Each agent's commands now run in a network of their own. A server started in a command answers on `localhost` to the rest of that command, and no other agent can reach it. The internet is reached as before, with the same addresses refused, and names are looked up through a resolver in the sandbox container.
+- The sandbox image adds `iproute2` and `dnsmasq-base`.
+- The agent is told it can use localhost within its workspace, to start servers with the `process` tool instead of `&` or `nohup`, and to tell the user which port to open.
+- The app's Content-Security-Policy allows frames from the preview domain, and from nothing when previews are off.
+
 ## 0.9.0 (2026-11-22)
 
 Delegated work in chat.

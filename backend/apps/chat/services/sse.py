@@ -39,7 +39,7 @@ def to_sse(event: dict, seen_tools: set[str]) -> str | None:
 
 
 # The input keys that say what a call acted on, most telling first.
-DETAIL_KEYS = ("command", "path", "url", "task", "skill_name", "pattern")
+DETAIL_KEYS = ("command", "path", "url", "task", "skill_name", "pattern", "name")
 
 
 def detail(tool_input) -> str:

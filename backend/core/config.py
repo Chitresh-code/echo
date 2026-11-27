@@ -37,6 +37,9 @@ class Settings:
     max_agents: int = 10
     # Turns one user may have running at once, across all their chats.
     max_running_turns: int = 2
+    # Where previews of the agents' dev servers are served, as scheme://domain[:port], each agent and
+    # port on its own subdomain. None turns previews off.
+    preview_url: str | None = None
 
 
 def _positive_int(env: Mapping[str, str], name: str, default: int) -> int:
@@ -73,6 +76,30 @@ def _public_url(env: Mapping[str, str]) -> str:
     return value
 
 
+def _local(host: str) -> bool:
+    return host == "localhost" or host.endswith(".localhost")
+
+
+def _preview_url(env: Mapping[str, str], public_url: str) -> str | None:
+    value = env.get("ECHO_PREVIEW_URL", "").strip().rstrip("/")
+    if not value:
+        return None
+    parts = urlsplit(value)
+    if parts.scheme not in ("http", "https") or not parts.hostname or parts.path or parts.query or parts.fragment or parts.username:
+        raise ConfigError(f"ECHO_PREVIEW_URL must be a scheme and domain only, such as http://preview.localhost:8000, got {value!r}")
+    host, public = parts.hostname, urlsplit(public_url).hostname
+    # Previews run code the agent wrote. On Echo's own host, or a parent or child of it, that code
+    # could read or set Echo's cookies. Under localhost that only reaches the developer's own
+    # browser, so preview.localhost next to localhost is allowed for local use.
+    nested = host.endswith(f".{public}") or public.endswith(f".{host}")
+    if host == public or (nested and not (_local(host) and _local(public))):
+        raise ConfigError(f"ECHO_PREVIEW_URL must be a domain apart from ECHO_PUBLIC_URL's, got {value!r}")
+    # The preview cookie is Secure, which browsers keep over plain http only on localhost.
+    if parts.scheme == "http" and not _local(host):
+        raise ConfigError(f"ECHO_PREVIEW_URL must be https unless it is under localhost, got {value!r}")
+    return value.lower()
+
+
 def _secret_key(env: Mapping[str, str]) -> str:
     value = _required(env, "ECHO_SECRET_KEY")
     try:
@@ -88,19 +115,21 @@ def load_settings(env: Mapping[str, str] = os.environ) -> Settings:
     command_timeout_max = _positive_int(env, "ECHO_COMMAND_TIMEOUT_MAX", 1800)
     if command_timeout > command_timeout_max:
         raise ConfigError(f"ECHO_COMMAND_TIMEOUT ({command_timeout}) must not be above ECHO_COMMAND_TIMEOUT_MAX ({command_timeout_max})")
+    public_url = _public_url(env)
     return Settings(
         data_dir=Path(env.get("ECHO_DATA_DIR", "/data")),
         runner_socket=Path(env.get("ECHO_RUNNER_SOCKET", "/run/echo/runner.sock")),
         command_timeout=command_timeout,
         command_timeout_max=command_timeout_max,
         turn_timeout=_positive_int(env, "ECHO_TURN_TIMEOUT", 1800),
-        public_url=_public_url(env),
+        public_url=public_url,
         ms_tenant_id=_guid(env, "ECHO_MS_TENANT_ID"),
         ms_client_id=_guid(env, "ECHO_MS_CLIENT_ID"),
         ms_client_secret=_required(env, "ECHO_MS_CLIENT_SECRET"),
         secret_key=_secret_key(env),
         max_agents=_positive_int(env, "ECHO_MAX_AGENTS", 10),
         max_running_turns=_positive_int(env, "ECHO_MAX_RUNNING_TURNS", 2),
+        preview_url=_preview_url(env, public_url),
     )
 
 

@@ -38,12 +38,16 @@ def test_a_user_cannot_reach_another_users_agent(client, fake_runner):
         ("PUT", f"/api/agents/{ws}/file", {"json": {"path": "a.txt", "content": "x"}}),
         ("GET", f"/api/agents/{ws}/git/status", {}),
         ("GET", f"/api/agents/{ws}/git/file", {"params": {"path": "a.txt"}}),
+        ("GET", f"/api/agents/{ws}/processes", {}),
+        ("GET", f"/api/agents/{ws}/processes/web/logs", {}),
+        ("DELETE", f"/api/agents/{ws}/processes/web", {}),
+        ("POST", f"/api/agents/{ws}/preview", {"json": {"port": 3000}}),
         ("POST", f"/api/agents/{ws}/chats", {}),
         ("POST", f"/api/agents/{ws}/chats/{ID}/turns", {"json": {"prompt": "hi", "credential_id": ID, "model": "m"}}),
     ]:
         r = client.request(method, path, **kwargs)
         assert (r.status_code, r.json()["error"]["code"]) == (404, "agent_not_found"), f"{method} {path}"
-    assert fake_runner.requests == []
+    assert fake_runner.requests == [] and fake_runner.process_calls == []
 
     client.cookies.set(COOKIE, ada)
     assert [(a["id"], a["name"]) for a in client.get("/api/agents").json()["data"]] == [(ws, "Test agent")]

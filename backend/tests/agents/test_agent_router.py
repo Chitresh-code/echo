@@ -144,3 +144,16 @@ def _touch(client, agent_id):
             await db.commit()
 
     client.portal.call(go)
+
+
+def test_processes_list_logs_and_stop(client, fake_runner):
+    fake_runner.processes[WS] = {"web": {"name": "web", "command": "npm run dev", "cwd": None, "status": "running", "exit_code": None, "started_at": 1.0}}
+    fake_runner.ports, fake_runner.process_log = [5173], "ready\n"
+    listed = client.get(f"/api/agents/{WS}/processes").json()["data"]
+    assert listed["ports"] == [5173] and listed["processes"][0]["name"] == "web"
+    assert client.get(f"/api/agents/{WS}/processes/web/logs", params={"tail": 50}).json()["data"] == {"name": "web", "log": "ready\n"}
+    assert fake_runner.process_calls[-1] == ("logs", WS, "web", 50)
+    assert client.get(f"/api/agents/{WS}/processes/web/logs", params={"tail": 5000}).status_code == 422
+    assert client.delete(f"/api/agents/{WS}/processes/web").json()["data"]["status"] == "exited"
+    r = client.delete(f"/api/agents/{WS}/processes/other")
+    assert (r.status_code, r.json()["error"]["code"]) == (404, "process_not_found")
