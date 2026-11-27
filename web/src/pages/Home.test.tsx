@@ -84,7 +84,7 @@ test('with no model key the box is off and points to Credentials', async () => {
   expect(messageBox().getAttribute('contenteditable')).toBe('false')
   const link = [...document.querySelectorAll('main a')].find((a) => a.textContent === 'Add a key') as HTMLAnchorElement
   expect(link.getAttribute('href')).toBe('/credentials')
-  expect(document.querySelector('[aria-label="Model"]')).toBeNull()
+  expect(document.querySelector('[aria-label^="Model "]')).toBeNull()
 })
 
 test('with keys but no model chosen it asks for one and keeps the message', async () => {
@@ -93,7 +93,7 @@ test('with keys but no model chosen it asks for one and keeps the message', asyn
   await typeMessage('hello')
   await press(messageBox(), 'Enter')
   expect(posts()).toEqual([])
-  expect(document.body.textContent).toContain('Choose a model below first.')
+  expect(document.body.textContent).toContain('Choose a model with /model first.')
   expect(messageBox().editor.getMarkdown()).toBe('hello')
 })
 

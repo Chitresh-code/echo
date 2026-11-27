@@ -15,7 +15,8 @@ import { compact } from '../format'
 import { MONO } from '../theme'
 import { Composer, writeDraft } from '../composer/Composer'
 import { Markdown } from './Markdown'
-import { ModelPicker, useModelChoice } from './ModelPicker'
+import { SettingsLabel } from '../composer/SettingsLabel'
+import { useModelChoice } from './modelChoice'
 
 // ok is missing until the call's result arrives.
 type ToolPart = { kind: 'tool'; id: string; name: string; skill?: string; detail?: string; ok?: boolean }
@@ -219,7 +220,7 @@ export function Chat({ agentId, initial, onTurnStart, onTurnDone, onTitle, onRun
     setNotice('')
     if (running) return Promise.resolve(false)
     if (!models.choice) {
-      setNotice('Choose a model below first.')
+      setNotice('Choose a model with /model first.')
       return Promise.resolve(false)
     }
     const choice = models.choice
@@ -364,8 +365,9 @@ export function Chat({ agentId, initial, onTurnStart, onTurnDone, onTitle, onRun
           disabled={models.keys?.length === 0}
           onSend={send}
           onStop={() => running?.abort()}
-          placeholder="Give the agent a task, or correct what it did"
-          footer={<Box sx={{ display: 'flex', gap: 1, minWidth: 0 }}><ModelPicker state={models} disabled={!!running} /></Box>}
+          placeholder="Give the agent a task, or type / for commands"
+          commands={models.commands}
+          footer={<SettingsLabel state={models} />}
         />
       </Box>
     </Box>

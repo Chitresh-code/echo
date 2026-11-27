@@ -3,7 +3,8 @@ import { useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router'
 import { api, errorText } from '../api/client'
 import type { Agent } from '../api/types'
-import { ModelPicker, useModelChoice } from '../agent/ModelPicker'
+import { useModelChoice } from '../agent/modelChoice'
+import { SettingsLabel } from '../composer/SettingsLabel'
 import { useAuth } from '../auth'
 import { Composer } from '../composer/Composer'
 import { useWorkspaces } from '../layout/workspaces'
@@ -24,7 +25,7 @@ export function Home() {
   async function start(markdown: string): Promise<boolean> {
     setError('')
     if (!models.choice) {
-      setError('Choose a model below first.')
+      setError('Choose a model with /model first.')
       return false
     }
     try {
@@ -57,8 +58,9 @@ export function Home() {
         autoFocus
         disabled={noKey}
         onSend={start}
-        placeholder="Ask Echo to build, fix or research something"
-        footer={noKey ? null : <Box sx={{ display: 'flex', gap: 1, minWidth: 0 }}><ModelPicker state={models} disabled={false} /></Box>}
+        placeholder="Ask Echo to build, fix or research something, or type / for commands"
+        commands={models.commands}
+        footer={noKey ? null : <SettingsLabel state={models} />}
       />
       <Typography color="text.secondary" sx={{ fontSize: 13, textAlign: 'center' }}>
         Echo is AI and can make mistakes. Check its work.

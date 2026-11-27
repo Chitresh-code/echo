@@ -43,11 +43,12 @@
       <p class="lede">You give the agent work in the chat that fills each workspace's page. It does the work in that workspace: it reads and edits files, runs commands, installs packages and keeps a history of its changes.</p>
 
       <h2 id="send">Send a message</h2>
-      <p>Below the message box:</p>
+      <p>Type <kbd>/</kbd> at the start of a line in the message box to see the commands. Keep typing to narrow the list, move with <kbd>↑</kbd> and <kbd>↓</kbd>, pick with <kbd>Enter</kbd> or <kbd>Tab</kbd>, and press <kbd>Esc</kbd> to close the menu and keep what you typed.</p>
       <ul>
-        <li><b>The model button</b> picks one of your keys and one of its models. Without a key, it links to Credentials instead.</li>
-        <li><b>Effort</b> sets how hard the model thinks. <b>auto</b> uses the level recommended for the model. Higher levels help with hard tasks but are slower and cost more. Keys for an OpenAI-compatible service take only auto.</li>
+        <li><b>/model</b> lists the models of each of your keys, grouped by key, with a tick on the one in use. Type part of a name to find it, for example <code>/model mini</code>. Without a key, it offers to open Credentials.</li>
+        <li><b>/effort</b> sets how hard the model thinks. <b>auto</b> uses the level recommended for the model and <b>off</b> skips extra thinking. Higher levels help with hard tasks but are slower and cost more. Keys for an OpenAI-compatible service take only auto.</li>
       </ul>
+      <p>The model and effort the next message uses show in small text in the corner of the message box. Click it to choose from the same lists with a search field, which is handy on a phone. A message that is only a command is never sent, while a line that starts with a slash but is not a command, such as <code>/etc/hosts is missing</code>, is sent as written.</p>
       <p><kbd>Enter</kbd> sends and <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line. In a code block <kbd>Enter</kbd> adds a line, and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on a Mac) sends from anywhere. Your browser remembers the model and effort you chose. You can switch to another model or provider at any message, and the new model sees the whole conversation so far.</p>
 
       <h2 id="format">Format a message</h2>

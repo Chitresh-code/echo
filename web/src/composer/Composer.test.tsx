@@ -3,6 +3,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { fakeLayout, messageBox as box, press as pressOn, typeMessage as type } from '../test/dom'
 import { Composer, MESSAGE_CHARS } from './Composer'
+import { matches, type Command } from './commands'
 
 let root: Root
 let host: HTMLElement
@@ -164,4 +165,126 @@ test('a file name stays text; a web address typed out becomes a link', async () 
   await press('Enter')
   expect(sent[0]).toContain('fix hello.py')
   expect(sent[0]).not.toContain('](http://hello.py)')
+})
+
+// Commands: a fake `/model` with two models, a loading row and a Retry row, and `/effort`.
+let applied: string[] = []
+const fakeCommands: Command[] = [
+  {
+    name: 'model',
+    description: 'Choose the model',
+    options: (q) =>
+      [
+        { id: 'alpha-mini', label: 'alpha-mini', group: 'Work key' },
+        { id: 'beta-large', label: 'beta-large', group: 'Work key', selected: true },
+        { id: 'loading', label: 'Loading the models', group: 'Home key', disabled: true },
+        { id: 'retry', label: 'Retry', group: 'Old key' },
+      ].filter((o) => matches(o.label, q)),
+    apply: (o) => (o.id === 'retry' ? null : (applied.push(o.id), `Model set to ${o.label}`)),
+  },
+  { name: 'effort', description: 'How hard the model thinks', options: (q) => [{ id: 'high', label: 'high' }].filter((o) => matches(o.label, q)), apply: (o) => (applied.push(o.id), `Effort set to ${o.label}`) },
+]
+const menu = () => document.querySelector('[role="listbox"]') as HTMLElement | null
+const options = () => Array.from(document.querySelectorAll('[role="option"]')).map((o) => o.textContent)
+const status = () => Array.from(host.querySelectorAll('[role="status"]')).map((s) => s.textContent).join('')
+
+test('/ at the start of a line opens the command menu; mid-line it is text', async () => {
+  applied = []
+  await render({ commands: fakeCommands })
+  await type('look in /etc')
+  expect(menu()).toBeNull()
+  await act(async () => {
+    editor().commands.clearContent()
+  })
+  await type('/')
+  expect(options()).toEqual(['/modelChoose the model', '/effortHow hard the model thinks'])
+  expect(status()).toBe('2 commands')
+  await type('ef')
+  expect(options()).toEqual(['/effortHow hard the model thinks'])
+  // No command starts with this, so the menu closes and the text sends as typed.
+  await type('x')
+  expect(menu()).toBeNull()
+  await press('Enter')
+  expect(sent).toEqual(['/efx'])
+})
+
+test('picking a command lists its options; picking one applies it and clears the text', async () => {
+  applied = []
+  await render({ commands: fakeCommands })
+  await type('/')
+  await press('ArrowDown')
+  await press('ArrowUp')
+  await press('Enter')
+  expect(editor().getText()).toBe('/model ')
+  expect(options()).toEqual(['alpha-mini', 'beta-largeIn use', 'Loading the models', 'Retry'])
+  expect(menu()!.querySelector('[role="group"]')?.getAttribute('aria-labelledby')).toBeTruthy()
+  await type('beta')
+  expect(options()).toEqual(['beta-largeIn use'])
+  await press('Enter')
+  expect(applied).toEqual(['beta-large'])
+  expect(editor().isEmpty).toBe(true)
+  expect(menu()).toBeNull()
+  expect(status()).toBe('Model set to beta-large')
+  expect(sent).toEqual([])
+})
+
+test('the menu works with the pointer, and a disabled or Retry row keeps the text', async () => {
+  applied = []
+  await render({ commands: fakeCommands })
+  await type('/model ')
+  const rows = () => document.querySelectorAll('[role="option"]') as NodeListOf<HTMLElement>
+  await act(async () => rows()[2].click())
+  await act(async () => rows()[3].click())
+  expect(applied).toEqual([])
+  expect(editor().getText()).toBe('/model ')
+  await act(async () => rows()[0].click())
+  expect(applied).toEqual(['alpha-mini'])
+  expect(editor().isEmpty).toBe(true)
+})
+
+test('a known command is never sent; Escape closes the menu and then it sends as text', async () => {
+  await render({ commands: fakeCommands })
+  await type('/model zzz')
+  expect(document.body.textContent).toContain('Nothing matches "zzz". Press Escape to send it as text.')
+  await press('Enter')
+  await press('Enter', { metaKey: true })
+  await act(async () => sendButton().click())
+  expect(sent).toEqual([])
+  await press('Escape')
+  expect(menu()).toBeNull()
+  expect(editor().getText()).toBe('/model zzz')
+  await press('Enter')
+  expect(sent).toEqual(['/model zzz'])
+})
+
+test('the box points at the active row while the menu is open', async () => {
+  await render({ commands: fakeCommands })
+  await type('/')
+  const listId = menu()!.id
+  expect(box().getAttribute('aria-controls')).toBe(listId)
+  expect(box().getAttribute('aria-activedescendant')).toBe(`${listId}-0`)
+  await press('ArrowDown')
+  expect(box().getAttribute('aria-activedescendant')).toBe(`${listId}-1`)
+  await press('ArrowDown')
+  expect(box().getAttribute('aria-activedescendant')).toBe(`${listId}-0`)
+  await press('Escape')
+  expect(box().hasAttribute('aria-controls')).toBe(false)
+  expect(box().hasAttribute('aria-activedescendant')).toBe(false)
+})
+
+test('Enter during input method composition does not pick a row', async () => {
+  applied = []
+  await render({ commands: fakeCommands })
+  await type('/model alpha')
+  await press('Enter', { isComposing: true })
+  expect(applied).toEqual([])
+  expect(editor().getText()).toContain('/model alpha')
+})
+
+test('without commands, / is ordinary text', async () => {
+  await render()
+  await type('/model')
+  expect(menu()).toBeNull()
+  await press('Enter')
+  expect(sent).toEqual(['/model'])
 })

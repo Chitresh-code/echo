@@ -1,14 +1,17 @@
 import ArrowUpward from '@mui/icons-material/ArrowUpward'
 import Stop from '@mui/icons-material/Stop'
-import { Box, IconButton, Tooltip, Typography } from '@mui/material'
+import { Box, IconButton, Paper, Popper, Tooltip, Typography } from '@mui/material'
 import { Slice } from '@tiptap/pm/model'
 import { Placeholder } from '@tiptap/extensions'
 import { Markdown } from '@tiptap/markdown'
-import { EditorContent, useEditor, type Editor } from '@tiptap/react'
+import { EditorContent, Extension, useEditor, type Editor, type Range } from '@tiptap/react'
+import { Suggestion } from '@tiptap/suggestion'
 import StarterKit from '@tiptap/starter-kit'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { DRAFT_PREFIX } from '../auth'
 import { MONO } from '../theme'
+import { CommandMenu } from './CommandMenu'
+import { parse, step, type Command, type CommandOption, type Parsed } from './commands'
 
 // The api refuses a message longer than this; checked here on the same Markdown it receives.
 export const MESSAGE_CHARS = 100_000
@@ -26,11 +29,21 @@ type Props = {
   /** Gets the message as Markdown; resolving false puts it back in the box. */
   onSend: (markdown: string) => Promise<boolean>
   onStop?: () => void
-  /** Shown on the left under the text, such as the model picker. */
+  /** Shown on the left under the text, such as the model and effort label. */
   footer?: ReactNode
   placeholder?: string
   autoFocus?: boolean
+  /** Settings picked by typing `/` at the start of a line; never sent as a message. */
+  commands?: Command[]
 }
+
+/** The `/` text being typed: where it is, what follows the slash, and where to show the menu. */
+type Slash = { range: Range; query: string; rect: (() => DOMRect | null) | null }
+
+// Read by screen readers only.
+const visuallyHidden = { position: 'absolute', width: '1px', height: '1px', overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' } as const
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
 function readDraft(key: string): string {
   try {
@@ -50,7 +63,7 @@ export function writeDraft(key: string, markdown: string) {
 }
 
 /** The message box: Markdown by shortcut, sent as Markdown, drafts kept per tab. */
-export function Composer({ draftKey, disabled = false, busy = false, onSend, onStop, footer, placeholder = 'Message Echo', autoFocus }: Props) {
+export function Composer({ draftKey, disabled = false, busy = false, onSend, onStop, footer, placeholder = 'Message Echo', autoFocus, commands = [] }: Props) {
   const [empty, setEmpty] = useState(() => !readDraft(draftKey).trim())
   const [length, setLength] = useState(0)
   const [tooLong, setTooLong] = useState(false)
@@ -62,10 +75,59 @@ export function Composer({ draftKey, disabled = false, busy = false, onSend, onS
   // The editor's own handlers below are made before it exists, so they reach it through here.
   const editorRef = useRef<Editor | null>(null)
 
+  const menuId = useId()
+  const [slash, setSlash] = useState<Slash | null>(null)
+  const [active, setActive] = useState(0)
+  const [said, setSaid] = useState('')
+  const parsed: Parsed = slash ? parse(commands, slash.query) : { kind: 'none' }
+  const rows: CommandOption[] = parsed.kind === 'names'
+    ? parsed.names.map((c) => ({ id: c.name, label: `/${c.name}`, detail: c.description }))
+    : parsed.kind === 'options' ? parsed.command.options(parsed.query) : []
+  const open = parsed.kind !== 'none'
+  const at = Math.min(active, Math.max(rows.length - 1, 0))
+
+  // Each new filter starts on its first row that can be picked.
+  useEffect(() => {
+    setActive(Math.max(rows.findIndex((r) => !r.disabled), 0))
+  }, [slash?.query])
+
+  function pick(index: number) {
+    const ed = editorRef.current
+    const row = rows[index]
+    if (!ed || !slash || !row || row.disabled) return
+    if (parsed.kind === 'names') {
+      // Completing the name keeps the menu open on that command's options.
+      ed.chain().focus().insertContentAt(slash.range, { type: 'text', text: `/${row.id} ` }).run()
+    } else if (parsed.kind === 'options') {
+      const line = parsed.command.apply(row)
+      if (line === null) return
+      ed.chain().focus().deleteRange(slash.range).run()
+      setSaid(line)
+    }
+  }
+
+  // The editor's key handler runs before the suggestion plugin's, so the menu's keys are taken here.
+  const menuKey = useRef<(event: KeyboardEvent) => boolean>(() => false)
+  menuKey.current = (event) => {
+    if (!open) return false
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      setActive(step(rows.length, at, event.key === 'ArrowDown' ? 1 : -1))
+      return true
+    }
+    if ((event.key === 'Enter' || event.key === 'Tab') && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+      // With no row, Enter still does nothing: a known command is never sent as a message.
+      if (rows.length) pick(at)
+      return parsed.kind === 'options' || rows.length > 0
+    }
+    return false
+  }
+  const openRef = useRef(open)
+  openRef.current = open
+
   async function send(editor: Editor) {
     const { busy, disabled, onSend, draftKey } = latest.current
     const markdown = editor.getMarkdown().trim()
-    if (busy || disabled || !markdown) return
+    if (busy || disabled || !markdown || openRef.current) return
     if (markdown.length > MESSAGE_CHARS) {
       setTooLong(true)
       setLength(markdown.length)
@@ -93,6 +155,30 @@ export function Composer({ draftKey, disabled = false, busy = false, onSend, onS
       }),
       Markdown,
       Placeholder.configure({ placeholder }),
+      Extension.create({
+        name: 'slashCommands',
+        addProseMirrorPlugins() {
+          const show = (p: { range: Range; query: string; clientRect?: (() => DOMRect | null) | null }) => {
+            setSaid('')
+            setSlash({ range: p.range, query: p.query, rect: p.clientRect ?? null })
+          }
+          return [
+            Suggestion({
+              editor: this.editor,
+              char: '/',
+              startOfLine: true,
+              allowSpaces: true,
+              // Only at the very start of a paragraph or list item, never in code, so `/usr/bin`
+              // in a code block or `/etc` after bold text stays text.
+              allow: ({ state, range }) => {
+                const $from = state.doc.resolve(range.from)
+                return $from.parentOffset === 0 && !$from.parent.type.spec.code
+              },
+              render: () => ({ onStart: show, onUpdate: show, onExit: () => setSlash(null) }),
+            }),
+          ]
+        },
+      }),
     ],
     content: readDraft(draftKey),
     contentType: 'markdown',
@@ -102,7 +188,9 @@ export function Composer({ draftKey, disabled = false, busy = false, onSend, onS
       attributes: { role: 'textbox', 'aria-multiline': 'true', 'aria-label': 'Message' },
       handleKeyDown(view, event): boolean {
         // Never while an input method is composing: Enter there picks a candidate.
-        if (event.key !== 'Enter' || event.isComposing || view.composing) return false
+        if (event.isComposing || view.composing) return false
+        if (menuKey.current(event)) return true
+        if (event.key !== 'Enter') return false
         const ed = editorRef.current
         if (!ed) return false
         const mod = event.metaKey || event.ctrlKey
@@ -155,6 +243,17 @@ export function Composer({ draftKey, disabled = false, busy = false, onSend, onS
     [editor],
   )
 
+  // A textbox may point at the row it is on; screen readers then read the row as it changes.
+  useEffect(() => {
+    // Before the view mounts, and after it is torn down, Tiptap throws on any view access.
+    if (editor.isDestroyed) return
+    const dom = editor.view.dom
+    if (open) dom.setAttribute('aria-controls', menuId)
+    else dom.removeAttribute('aria-controls')
+    if (open && rows.length) dom.setAttribute('aria-activedescendant', `${menuId}-${at}`)
+    else dom.removeAttribute('aria-activedescendant')
+  })
+
   const showCount = tooLong || length >= COUNTER_FROM
   return (
     <Box
@@ -174,6 +273,27 @@ export function Composer({ draftKey, disabled = false, busy = false, onSend, onS
       }}
     >
       <EditorContent editor={editor} />
+      <Popper
+        open={open && !!slash?.rect}
+        anchorEl={slash?.rect ? { getBoundingClientRect: () => slash.rect?.() ?? new DOMRect() } : null}
+        placement="top-start"
+        sx={{ zIndex: 'modal' }}
+      >
+        <Paper elevation={4} sx={{ width: 340, maxWidth: 'calc(100vw - 32px)', border: 1, borderColor: 'divider', borderRadius: '10px' }}>
+          <CommandMenu
+            id={menuId}
+            label={parsed.kind === 'options' ? parsed.command.description : 'Commands'}
+            rows={rows}
+            active={at}
+            onPick={pick}
+            onHover={setActive}
+            empty={parsed.kind === 'options' ? `Nothing matches "${parsed.query}". Press Escape to send it as text.` : undefined}
+          />
+        </Paper>
+      </Popper>
+      <Box role="status" sx={visuallyHidden}>
+        {said || (open ? (rows.length ? plural(rows.length, parsed.kind === 'names' ? 'command' : 'option') : 'Nothing matches') : '')}
+      </Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, pb: 1, pt: 0.5 }}>
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>{footer}</Box>
         {showCount && (

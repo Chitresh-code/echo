@@ -8,6 +8,24 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
+## 0.12.0 (2026-11-27)
+
+Slash commands in the message box.
+
+### Added
+
+- Commands in the message box: type `/` at the start of a line for a menu of commands, then the command name and a space for its choices. `/model` lists the models of every key, grouped by key, and `/effort` sets how hard the model thinks. Up and Down move, Enter or Tab picks, Escape closes the menu and keeps the text, and typing narrows the list. A message that is only a known command is never sent, while an unknown `/word` (a path such as `/etc/hosts`) is sent as ordinary text. The menu works with a keyboard alone and is read out by screen readers.
+- The model and effort the next message uses show as a small label in the corner of the message box (the effort only when it is not auto). Clicking it opens the same choices with a search field, for touch screens and anyone who does not use `/`.
+- A key whose models fail to load says why in the menu and can be retried on its own. Models are listed only once a menu first needs them.
+
+### Changed
+
+- The model and effort dropdowns under the message box are gone; use `/model`, `/effort` or the label. The message box hints at `/` in its placeholder, and a send without a model says "Choose a model with /model first."
+
+### Fixed
+
+- A key for an OpenAI-compatible service is only offered effort auto, and a higher effort remembered from another key is sent as auto, so its turns are no longer refused.
+
 ## 0.11.0 (2026-11-27)
 
 Chat-first app shell.
