@@ -68,11 +68,19 @@
 
       <h2 id="stop-and-new">Stop, and start fresh</h2>
       <ul>
-        <li><b>Stop</b> stops the reply and the command it is running. A command a subagent is running finishes first. What the agent already changed stays in its files.</li>
-        <li><b>New chat</b>, in the workspace header, starts a fresh conversation. The agent keeps its skills, notes and files across chats; only the conversation starts over.</li>
+        <li><b>Stop</b> stops the reply on the server and the command it is running, from any tab showing the chat. A command a subagent is running finishes first. What the agent already changed stays in its files, and the reply is marked as stopped.</li>
+        <li><b>New chat</b>, in the workspace header, starts a fresh conversation, even while a reply runs: that reply goes on in its own chat. The agent keeps its skills, notes and files across chats; only the conversation starts over.</li>
       </ul>
-      <p>Reloading the page keeps the same chat, so the agent still remembers it, but earlier messages are not shown again.</p>
-      <p>A reply runs only while its page is open. If you go to another page or close the tab while the agent is working, Echo asks first, and leaving stops the reply. What it already changed stays in its files.</p>
+
+      <h2 id="chats">Your chats</h2>
+      <p>Every chat is kept, with its messages, tool rows, plans, subagent blocks, the tokens each reply used and how it ended. <b>Chats</b>, in the workspace header, lists the workspace's chats with the most recently used first. A dot and <b>Working now</b> mark one whose reply is still running. Select a chat to open it and carry on where it left off.</p>
+      <p>Each chat has its own address, so reloading the page, a bookmark, or the browser's back and forward buttons open the same chat. A long chat opens at its latest 30 replies; <b>Show earlier messages</b> loads the ones before.</p>
+      <p>To delete a chat, select the bin next to it in the list and confirm. Its messages and the agent's memory of that conversation are removed for good. Files the agent changed and skills it learned stay. A chat cannot be deleted while its reply runs; stop it or wait for it to end first.</p>
+      <p>Chats from before Echo kept them are listed too, without the tokens or times of their replies.</p>
+
+      <h2 id="leaving">Leaving while the agent works</h2>
+      <p>A reply runs on the server whether or not its page is open. You can go to another page, another workspace or close the tab, and the agent keeps working. Open the chat again to see what it did meanwhile and follow the rest as it happens.</p>
+      <p>If the connection drops, the chat says so and reconnects on its own, without losing any of the reply. If Echo itself restarts during a reply, that reply stops and is marked as interrupted; what the agent already changed stays in its files, and you can send the next message as usual.</p>
 
       <h2 id="what-it-can-do">What the agent can do</h2>
       <p>It runs shell commands, reads, writes and edits files, fetches web pages, uses the provider's web search where there is one, loads its skills and searches its notes. When a task changes files it saves them to the workspace's history, and it ends each reply with what it changed, how it checked it and anything it could not do.</p>

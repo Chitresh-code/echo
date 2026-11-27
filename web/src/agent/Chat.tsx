@@ -6,9 +6,9 @@ import ErrorOutlined from '@mui/icons-material/ErrorOutlined'
 import ExpandMore from '@mui/icons-material/ExpandMore'
 import RadioButtonUnchecked from '@mui/icons-material/RadioButtonUnchecked'
 import Terminal from '@mui/icons-material/Terminal'
-import { Alert, Box, ButtonBase, CircularProgress, Link, Typography } from '@mui/material'
+import { Alert, Box, Button, ButtonBase, CircularProgress, Link, Typography } from '@mui/material'
 import { useEffect, useRef, useState } from 'react'
-import { api, errorText } from '../api/client'
+import { api, ApiError, errorText } from '../api/client'
 import { streamTurn, type PlanItem, type TurnEvent } from '../api/stream'
 import type { Usage } from '../api/types'
 import { compact } from '../format'
@@ -17,6 +17,7 @@ import { Composer, writeDraft } from '../composer/Composer'
 import { Markdown } from './Markdown'
 import { SettingsLabel } from '../composer/SettingsLabel'
 import { useModelChoice } from './modelChoice'
+import { chatsUrl, chatUrl, INTERRUPTED, seconds, TRUNCATED, turnUrl, type ChatDetail, type StoredTurn } from './chats'
 
 // ok is missing until the call's result arrives.
 type ToolPart = { kind: 'tool'; id: string; name: string; skill?: string; detail?: string; ok?: boolean }
@@ -25,28 +26,8 @@ type DelegatePart = { kind: 'delegate'; id: string; task: string; tools: ToolPar
 type Part = { kind: 'text'; text: string } | ToolPart | DelegatePart | { kind: 'plan'; items: PlanItem[] }
 type Message =
   | { role: 'user'; text: string }
-  | { role: 'agent'; parts: Part[]; usage?: Usage; learned?: string[]; seconds?: number; error?: string; stopped?: boolean }
+  | { role: 'agent'; parts: Part[]; usage?: Usage; learned?: string[]; seconds?: number; error?: string; stopped?: boolean; truncated?: boolean }
 type AgentMessage = Extract<Message, { role: 'agent' }>
-
-// shortcut: per tab and not shared, so two tabs on one workspace hold separate chats and neither sees the other's turn; coordinate through stored chats.
-const chatKey = (agentId: string) => `echo.chat.${agentId}`
-
-function storedChat(agentId: string): string | null {
-  try {
-    return sessionStorage.getItem(chatKey(agentId))
-  } catch {
-    return null
-  }
-}
-
-export function storeChat(agentId: string, chatId: string | null) {
-  try {
-    if (chatId) sessionStorage.setItem(chatKey(agentId), chatId)
-    else sessionStorage.removeItem(chatKey(agentId))
-  } catch {
-    // Without storage a reload starts a new chat.
-  }
-}
 
 // The plan shows what todo_write wrote, and checking on background tasks says nothing to the user.
 const HIDDEN_TOOLS = new Set(['todo_write', 'strands_manage_background_task'])
@@ -100,9 +81,28 @@ export function apply(message: AgentMessage, event: TurnEvent): AgentMessage {
       return { ...message, usage: event.data.usage, learned: event.data.learned }
     case 'error':
       return { ...message, error: event.data.request_id ? `${event.data.message} (request ${event.data.request_id})` : event.data.message }
+    case 'stopped':
+      return { ...message, stopped: true }
+    case 'turn':
     case 'title':
       return message
   }
+}
+
+/** A stored chat as messages, rebuilt from each turn's events the same way they were shown live. */
+export function fromTurns(turns: StoredTurn[]): Message[] {
+  return turns.flatMap((turn): Message[] => {
+    const agent = turn.events.reduce(apply, { role: 'agent', parts: [] } as AgentMessage)
+    return [
+      { role: 'user', text: turn.prompt },
+      {
+        ...agent,
+        seconds: seconds(turn),
+        truncated: turn.truncated || undefined,
+        error: agent.error ?? (turn.status === 'interrupted' ? INTERRUPTED : undefined),
+      },
+    ]
+  })
 }
 
 const rowSx = { display: 'flex', alignItems: 'center', gap: 1, px: 1.25, py: 0.75, border: 1, borderColor: 'divider', borderRadius: '8px', bgcolor: 'background.default', fontSize: 12, minWidth: 0 } as const
@@ -180,33 +180,53 @@ function Plan({ items }: { items: PlanItem[] }) {
 
 type Props = {
   agentId: string
+  /** The chat to open, or null for a new one. */
+  chatId: string | null
   /** A message to send as soon as the models are known, once: the one typed on the home page. */
   initial?: string
+  /** A new chat got its id: its first turn has started. */
+  onChatId: (id: string) => void
+  /** This chat does not exist (deleted, or never written to). */
+  onMissing: () => void
   onTurnStart: () => void
   onTurnDone: () => void
   onTitle: (name: string) => void
-  /** Stops the running turn; null when none runs. */
-  onRunning: (stop: (() => void) | null) => void
   onOpen: (path: string) => void
 }
 
-export function Chat({ agentId, initial, onTurnStart, onTurnDone, onTitle, onRunning, onOpen }: Props) {
+// Waits between attempts to follow a turn again after the connection drops: quick at first, then
+// every 10 s for as long as the page stays open, since the turn runs on the server either way.
+const RETRY_MS = [1000, 2000, 5000, 10000]
+
+const wait = (ms: number, signal: AbortSignal) =>
+  new Promise<void>((done) => {
+    const timer = setTimeout(done, ms)
+    signal.addEventListener('abort', () => (clearTimeout(timer), done()), { once: true })
+  })
+
+export function Chat({ agentId, chatId: openedId, initial, onChatId, onMissing, onTurnStart, onTurnDone, onTitle, onOpen }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
-  const [chatId, setChatId] = useState<string | null>(() => storedChat(agentId))
-  const [running, setRunning] = useState<AbortController | null>(null)
+  const [loading, setLoading] = useState<'loading' | string | null>(openedId ? 'loading' : null)
+  const [more, setMore] = useState(false)
+  const [loadingEarlier, setLoadingEarlier] = useState(false)
+  const [running, setRunning] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
   const [notice, setNotice] = useState('')
   // Bumped to reopen the message box on a draft written for it.
   const [boxKey, setBoxKey] = useState(0)
   const models = useModelChoice()
   const end = useRef<HTMLDivElement>(null)
   const sentInitial = useRef(false)
+  const chatId = useRef(openedId)
+  const turnId = useRef<string | null>(null)
+  const firstTurnId = useRef<string | null>(null)
+  // Aborted when the chat closes: only this page stops reading, the turn goes on.
+  const alive = useRef(new AbortController())
 
   // A block body: scrollIntoView can return a promise, which React would take for a cleanup function.
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' })
   }, [messages])
-
-  useEffect(() => onRunning(running ? () => running.abort() : null), [running, onRunning])
 
   const updateLast = (change: (m: AgentMessage) => Message) =>
     setMessages((all) => {
@@ -214,83 +234,169 @@ export function Chat({ agentId, initial, onTurnStart, onTurnDone, onTitle, onRun
       return last?.role === 'agent' ? [...all.slice(0, -1), change(last)] : all
     })
 
-  /** Resolves once the turn has started (true), or with false when it never did, so the message
-   *  box gets the text back. The turn itself runs on after that. */
-  function send(prompt: string): Promise<boolean> {
-    setNotice('')
-    if (running) return Promise.resolve(false)
-    if (!models.choice) {
-      setNotice('Choose a model with /model first.')
-      return Promise.resolve(false)
+  async function load(signal: AbortSignal) {
+    if (!chatId.current) return
+    setLoading('loading')
+    try {
+      const chat = await api<ChatDetail>(chatUrl(agentId, chatId.current), { signal })
+      setMessages(fromTurns(chat.turns))
+      setMore(chat.more)
+      firstTurnId.current = chat.turns[0]?.id ?? null
+      setLoading(null)
+      const last = chat.turns.at(-1)
+      if (last?.status === 'running') {
+        turnId.current = last.id
+        void follow(null, Date.parse(last.started_at))
+      }
+    } catch (e) {
+      if (signal.aborted) return
+      if (e instanceof ApiError && e.status === 404) onMissing()
+      else setLoading(errorText(e))
     }
-    const choice = models.choice
-    return new Promise((started) => void run(prompt, choice, started))
   }
 
-  async function run(prompt: string, choice: NonNullable<typeof models.choice>, started: (ok: boolean) => void) {
-    setMessages((all) => [...all, { role: 'user', text: prompt }, { role: 'agent', parts: [] }])
+  useEffect(() => {
     const controller = new AbortController()
-    setRunning(controller)
-    const startedAt = performance.now()
-    let begun = false
-    let finished = false
-    // The reply ends at done; the stream can stay open a little longer for the workspace's title.
+    alive.current = controller
+    void load(controller.signal)
+    return () => controller.abort()
+    // Opened once per chat; the page gives each chat its own Chat.
+  }, [])
+
+  async function earlier() {
+    if (!chatId.current || !firstTurnId.current) return
+    setLoadingEarlier(true)
+    try {
+      const chat = await api<ChatDetail>(`${chatUrl(agentId, chatId.current)}?before=${firstTurnId.current}`)
+      setMessages((all) => [...fromTurns(chat.turns), ...all])
+      setMore(chat.more)
+      firstTurnId.current = chat.turns[0]?.id ?? firstTurnId.current
+    } catch (e) {
+      setNotice(errorText(e))
+    } finally {
+      setLoadingEarlier(false)
+    }
+  }
+
+  /** Reads a turn to its end: `first` is the stream that started it, or null to follow one already
+   *  running. A dropped connection is followed again, and the turn's replay rebuilds the message,
+   *  so nothing shown is lost or doubled. `started` hears whether a new turn began at all. */
+  async function follow(first: AsyncGenerator<TurnEvent> | null, startedAt: number, started?: (ok: boolean) => void) {
+    const signal = alive.current.signal
+    let begun = !started
+    let ended = false
+    let attempt = 0
+    setRunning(true)
     const finish = () => {
-      if (finished) return
-      finished = true
-      const seconds = Math.round((performance.now() - startedAt) / 1000)
-      updateLast((m) => ({ ...m, seconds }))
-      setRunning(null)
+      if (ended) return
+      ended = true
+      updateLast((m) => ({ ...m, seconds: m.seconds ?? Math.round((Date.now() - startedAt) / 1000) }))
+      setRunning(false)
+      setReconnecting(false)
       // The agent may have changed files, so the explorer and open files catch up.
       onTurnDone()
     }
-    try {
-      let id = chatId
-      if (!id) {
-        id = (await api<{ id: string }>(`/api/agents/${agentId}/chats`, { method: 'POST' })).id
-        setChatId(id)
-        storeChat(agentId, id)
-      }
-      const body = { prompt, credential_id: choice.credentialId, model: choice.model, effort: models.effort }
-      for await (const event of streamTurn(`/api/agents/${agentId}/chats/${id}/turns`, body, controller.signal)) {
-        if (!begun) {
-          begun = true
-          started(true)
-          onTurnStart()
+    for (;;) {
+      try {
+        const events = first ?? streamTurn(`${turnUrl(agentId, chatId.current!, turnId.current!)}/events`, undefined, signal)
+        first = null
+        for await (const event of events) {
+          if (event.event === 'turn') {
+            turnId.current = event.data.id
+            // A rejoin replays the turn from its start, so the message is rebuilt from nothing.
+            if (begun) updateLast(() => ({ role: 'agent', parts: [] }))
+            else {
+              begun = true
+              started!(true)
+              onTurnStart()
+              if (chatId.current && !openedId) onChatId(chatId.current)
+            }
+            attempt = 0
+            setReconnecting(false)
+          } else if (event.event === 'title') onTitle(event.data.name)
+          else updateLast((m) => apply(m, event))
+          if (event.event === 'done' || event.event === 'error' || event.event === 'stopped') finish()
         }
-        if (event.event === 'title') onTitle(event.data.name)
-        else updateLast((m) => apply(m, event))
-        if (event.event === 'done' || event.event === 'error') finish()
+        if (ended || signal.aborted) return
+        // Closed with no ending: either the turn ended without one (the server restarted) or a
+        // proxy cut a long stream. The stored chat says which.
+        const chat = await api<ChatDetail>(chatUrl(agentId, chatId.current!), { signal })
+        const turn = chat.turns.find((t) => t.id === turnId.current)
+        if (turn?.status !== 'running') {
+          updateLast((m) => ({ ...m, error: m.error ?? (turn?.status === 'interrupted' || !turn ? INTERRUPTED : undefined), stopped: m.stopped || turn?.status === 'stopped' }))
+          finish()
+          return
+        }
+      } catch (e) {
+        if (signal.aborted) {
+          if (!begun) started!(false)
+          return
+        }
+        if (!begun) {
+          // Nothing ran: the message goes back in the box, and only the reason stays here.
+          setMessages((all) => all.slice(0, -2))
+          setRunning(false)
+          setNotice(errorText(e))
+          started!(false)
+          // Another tab is running a turn here: show it, so this tab follows it too.
+          if (e instanceof ApiError && e.code === 'chat_busy') void load(signal)
+          return
+        }
+        if (e instanceof ApiError && e.status === 404) {
+          updateLast((m) => ({ ...m, error: 'This chat was deleted while the turn ran.' }))
+          finish()
+          return
+        }
+        setReconnecting(true)
       }
-    } catch (e) {
-      if (!begun) {
-        // Nothing ran: the message goes back in the box, and only the reason stays here.
-        setMessages((all) => all.slice(0, -2))
-        setRunning(null)
-        if (!controller.signal.aborted) setNotice(errorText(e))
-        finished = true
-        started(false)
-        return
-      }
-      if (!finished) {
-        if (controller.signal.aborted) updateLast((m) => ({ ...m, stopped: true }))
-        else updateLast((m) => ({ ...m, error: `${errorText(e)} The connection to the agent was lost, so the turn stopped. What it already changed stays in its files.` }))
-      }
-    } finally {
-      if (!begun) started(true)
-      finish()
+      await wait(RETRY_MS[Math.min(attempt++, RETRY_MS.length - 1)], signal)
+      if (signal.aborted) return
     }
   }
 
-  // The message typed on the home page, sent once the keys are known. If it cannot be sent it is
-  // left in the box as a draft instead of being lost.
+  /** Resolves once the turn has started (true), or with false when it never did, so the message
+   *  box gets the text back. The turn itself runs on after that. */
+  async function send(prompt: string): Promise<boolean> {
+    setNotice('')
+    if (running) return false
+    if (!models.choice) {
+      setNotice('Choose a model with /model first.')
+      return false
+    }
+    const choice = models.choice
+    const signal = alive.current.signal
+    setMessages((all) => [...all, { role: 'user', text: prompt }, { role: 'agent', parts: [] }])
+    try {
+      // Only an id: the chat is stored by the turn, so an unsent chat leaves nothing behind.
+      chatId.current ??= (await api<{ id: string }>(chatsUrl(agentId), { method: 'POST', signal })).id
+    } catch (e) {
+      setMessages((all) => all.slice(0, -2))
+      if (!signal.aborted) setNotice(errorText(e))
+      return false
+    }
+    const body = { prompt, credential_id: choice.credentialId, model: choice.model, effort: models.effort }
+    const stream = streamTurn(`${chatUrl(agentId, chatId.current)}/turns`, body, signal)
+    return new Promise((started) => void follow(stream, Date.now(), started))
+  }
+
+  async function stop() {
+    if (!chatId.current || !turnId.current) return
+    try {
+      // The turn's stream then ends with stopped, in this tab and any other following it.
+      await api(`${turnUrl(agentId, chatId.current, turnId.current)}/stop`, { method: 'POST' })
+    } catch (e) {
+      setNotice(errorText(e))
+    }
+  }
+
+  // The message typed on the home page, sent once the keys are known. It waits as this
+  // workspace's draft until then, so a reload before it is sent keeps it in the box.
   useEffect(() => {
     if (!initial || sentInitial.current || models.keys === null) return
     sentInitial.current = true
     send(initial).then((ok) => {
-      if (ok) return
-      writeDraft(agentId, initial)
-      setBoxKey((k) => k + 1)
+      writeDraft(agentId, ok ? '' : initial)
+      if (!ok) setBoxKey((k) => k + 1)
     })
     // send reads the latest state when called; this runs once, when the keys arrive.
   }, [initial, models.keys])
@@ -299,12 +405,25 @@ export function Chat({ agentId, initial, onTurnStart, onTurnDone, onTitle, onRun
     <Box component="section" aria-label="Chat" sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
       <Box sx={{ flexGrow: 1, minHeight: 0, overflowY: 'auto' }}>
         <Box sx={{ maxWidth: 760, mx: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2, fontSize: 14, lineHeight: 1.55, minHeight: '100%' }}>
-          {messages.length === 0 && (
-            <Typography color="text.secondary" sx={{ m: 'auto', textAlign: 'center', maxWidth: 360 }}>
-              {chatId
-                ? 'This chat continues where it left off. Earlier messages are not shown after a reload.'
-                : 'Give the agent a task and correct it where needed. What it learns stays with this workspace.'}
-            </Typography>
+          {loading === 'loading' ? (
+            <Box role="status" aria-label="Loading the chat" sx={{ m: 'auto' }}>
+              <CircularProgress size={20} />
+            </Box>
+          ) : loading ? (
+            <Alert severity="error" sx={{ m: 'auto' }} action={<Button size="small" onClick={() => void load(alive.current.signal)}>Retry</Button>}>
+              The chat could not be loaded. {loading}
+            </Alert>
+          ) : (
+            messages.length === 0 && (
+              <Typography color="text.secondary" sx={{ m: 'auto', textAlign: 'center', maxWidth: 360 }}>
+                Give the agent a task and correct it where needed. What it learns stays with this workspace.
+              </Typography>
+            )
+          )}
+          {more && !loading && (
+            <Button size="small" onClick={earlier} disabled={loadingEarlier} sx={{ alignSelf: 'center' }}>
+              {loadingEarlier ? 'Loading…' : 'Show earlier messages'}
+            </Button>
           )}
           {messages.map((m, i) =>
             m.role === 'user' ? (
@@ -335,7 +454,12 @@ export function Chat({ agentId, initial, onTurnStart, onTurnDone, onTitle, onRun
                     ))}
                   </Box>
                 )}
-                {i === messages.length - 1 && running && <Typography role="status" color="text.secondary" sx={{ fontSize: 12 }}>Working…</Typography>}
+                {i === messages.length - 1 && running && (
+                  <Typography role="status" color="text.secondary" sx={{ fontSize: 12 }}>
+                    {reconnecting ? 'Connection lost. Reconnecting… The agent keeps working meanwhile.' : 'Working…'}
+                  </Typography>
+                )}
+                {m.truncated && <Typography color="text.secondary" sx={{ fontSize: 12 }}>{TRUNCATED}</Typography>}
                 {m.error && <Alert severity="error" sx={{ fontSize: 13 }}>{m.error}</Alert>}
                 {m.stopped && (
                   <Typography color="text.secondary" sx={{ fontSize: 12 }}>
@@ -361,10 +485,10 @@ export function Chat({ agentId, initial, onTurnStart, onTurnDone, onTitle, onRun
           key={boxKey}
           draftKey={agentId}
           autoFocus={!initial}
-          busy={!!running}
+          busy={running}
           disabled={models.keys?.length === 0}
           onSend={send}
-          onStop={() => running?.abort()}
+          onStop={stop}
           placeholder="Give the agent a task, or type / for commands"
           commands={models.commands}
           footer={<SettingsLabel state={models} />}

@@ -8,6 +8,29 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
+## 0.13.0 (2026-11-27)
+
+Stored chats: every chat is kept, listed and reopened, and a turn runs on whether or not its page stays open.
+
+### Added
+
+- Every chat is stored with its messages, tool rows, plans, subagent blocks, usage and how it ended. The Chats button in the workspace header lists a workspace's chats, newest first, with the ones still working marked; open one to read it and carry on where it left off. Long chats load their latest 30 turns first, with Show earlier messages for the rest.
+- Each chat has its own address (`/w/<workspace>/c/<chat>`), so a reload, a bookmark or back and forward open the same chat.
+- Delete a chat from the list. Its messages and the agent's memory of it are removed for good; files it changed and skills it learned stay.
+- Chats from before this version are imported once at startup from the agent's own session records, so they show in the list too, without usage or duration.
+- API: `GET /api/agents/{id}/chats`, `GET` and `DELETE /api/agents/{id}/chats/{chat}`, `GET .../turns/{turn}/events` to follow a running turn (or replay an ended one) and `POST .../turns/{turn}/stop`. A turn's stream now starts with a `turn` event carrying its id and can end with `stopped`.
+
+### Changed
+
+- A turn runs on the server whether or not anyone is reading it. Leaving the workspace, closing the tab or losing the connection no longer stops it, so the app no longer asks before you leave. Coming back to the chat shows what it did meanwhile and follows it to the end, and a dropped connection reconnects on its own.
+- Stop now stops the turn on the server, from any tab showing it. What the agent already changed stays in its files.
+- New chat is available while a turn runs; the running turn goes on and stays in the list.
+- Chat history is written in the background, so storing it never slows a reply. A turn that was running when the api restarted is shown as interrupted.
+
+### Removed
+
+- The question "The agent is still working" when leaving a workspace during a turn.
+
 ## 0.12.0 (2026-11-27)
 
 Slash commands in the message box.

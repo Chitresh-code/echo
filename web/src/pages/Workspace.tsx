@@ -2,16 +2,17 @@ import MoreHoriz from '@mui/icons-material/MoreHoriz'
 import PostAdd from '@mui/icons-material/PostAdd'
 import ViewSidebarOutlined from '@mui/icons-material/ViewSidebarOutlined'
 import {
-  Alert, Box, Button, ButtonBase, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Link, Menu, MenuItem, Tooltip, Typography, useMediaQuery,
+  Alert, Box, ButtonBase, IconButton, Link, Menu, MenuItem, Tooltip, Typography, useMediaQuery,
 } from '@mui/material'
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { Link as RouterLink, useLocation, useNavigate, useParams } from 'react-router'
 import { api, ApiError, errorText } from '../api/client'
 import type { Agent, GitFileStatus, Storage, Tree } from '../api/types'
-import { Chat, storeChat } from '../agent/Chat'
+import { Chat } from '../agent/Chat'
+import { ChatList } from '../agent/ChatList'
+import { chatPath, takeOldChat } from '../agent/chats'
 import { useOpenFiles } from '../agent/files'
 import { statusLetters } from '../agent/tree'
-import { useLeaveGuard } from '../agent/useLeaveGuard'
 import { WorkspacePanel } from '../agent/WorkspacePanel'
 import { DeleteDialog, NameInput } from '../layout/WorkspaceActions'
 import { useWorkspaces } from '../layout/workspaces'
@@ -45,12 +46,12 @@ function write(key: string, value: string) {
 const clampWidth = (w: number) => Math.round(Math.max(MIN_WIDTH, Math.min(w, window.innerWidth * MAX_SHARE)))
 
 export default function Workspace() {
-  const { agentId = '' } = useParams()
+  const { agentId = '', chatId = null } = useParams()
   // A new workspace id means a new page: every panel starts fresh.
-  return <WorkspacePage key={agentId} agentId={agentId} />
+  return <WorkspacePage key={agentId} agentId={agentId} chatId={chatId} />
 }
 
-function WorkspacePage({ agentId }: { agentId: string }) {
+function WorkspacePage({ agentId, chatId }: { agentId: string; chatId: string | null }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { workspaces, upsert } = useWorkspaces()
@@ -64,7 +65,22 @@ function WorkspacePage({ agentId }: { agentId: string }) {
     if (arrived.current) return
     arrived.current = true
     if (initial) navigate(location.pathname, { replace: true, state: null })
-  }, [initial, location.pathname, navigate])
+    else if (!chatId) {
+      // A tab open from before chats had addresses goes back to the chat it was in.
+      const old = takeOldChat(agentId)
+      if (old) navigate(chatPath(agentId, old), { replace: true })
+    }
+  }, [initial, location.pathname, navigate, agentId, chatId])
+
+  // The chat on screen. A new chat getting its address keeps the same Chat, mid-turn; any other
+  // change of address (New chat, the chat list, back and forward) opens the chat it names.
+  const [shown, setShown] = useState({ key: 0, id: chatId })
+  const adoptedId = useRef<string | null>(null)
+  if (shown.id !== chatId) setShown({ key: chatId && chatId === adoptedId.current ? shown.key : shown.key + 1, id: chatId })
+  const adopted = (id: string) => {
+    adoptedId.current = id
+    navigate(chatPath(agentId, id), { replace: true })
+  }
 
   const [agent, setAgent] = useState<Agent | null>(null)
   const [missing, setMissing] = useState(false)
@@ -72,10 +88,10 @@ function WorkspacePage({ agentId }: { agentId: string }) {
   const [statuses, setStatuses] = useState<GitFileStatus[]>([])
   const [storage, setStorage] = useState<Storage | null>(null)
   const [error, setError] = useState('')
+  // Kept apart from error, which a tree refresh clears.
+  const [notice, setNotice] = useState('')
   const [view, setView] = useState<'editor' | 'preview'>('editor')
   const [version, setVersion] = useState(0)
-  const [chatEpoch, setChatEpoch] = useState(0)
-  const [stop, setStop] = useState<(() => void) | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [menu, setMenu] = useState<HTMLElement | null>(null)
   const [dialog, setDialog] = useState<'purpose' | 'delete' | null>(null)
@@ -85,7 +101,6 @@ function WorkspacePage({ agentId }: { agentId: string }) {
   const [width, setWidth] = useState(() => clampWidth(Number(read(PANEL_WIDTH)) || DEFAULT_WIDTH))
   const files = useOpenFiles(agentId)
   const letters = useMemo(() => statusLetters(statuses), [statuses])
-  const guard = useLeaveGuard(stop)
 
   // The sidebar's copy is the live one: a rename there shows here at once.
   const live = workspaces?.find((a) => a.id === agentId) ?? agent
@@ -143,8 +158,6 @@ function WorkspacePage({ agentId }: { agentId: string }) {
     if (current) upsert({ ...current, name })
   }, [upsert])
 
-  const running = useCallback((s: (() => void) | null) => setStop(() => s), [])
-
   function showPanel(open: boolean) {
     setPanelOpen(open)
     if (open) setPanelMounted(true)
@@ -167,10 +180,13 @@ function WorkspacePage({ agentId }: { agentId: string }) {
     }
   }
 
-  function newChat() {
-    storeChat(agentId, null)
-    setChatEpoch((n) => n + 1)
-  }
+  // A running turn goes on without this page, and stays in the chat list to come back to.
+  const newChat = () => navigate(chatPath(agentId, null))
+
+  const chatGone = useCallback(() => {
+    setNotice('This chat does not exist. It may have been deleted. You are in a new chat.')
+    navigate(chatPath(agentId, null), { replace: true })
+  }, [agentId, navigate])
 
   function resize(e: PointerEvent<HTMLElement>) {
     const startX = e.clientX
@@ -234,12 +250,11 @@ function WorkspacePage({ agentId }: { agentId: string }) {
             {statuses.length} changed
           </Box>
         )}
-        <Tooltip title={stop ? 'Wait for the turn to end, or stop it' : 'New chat'}>
-          <span>
-            <IconButton aria-label="New chat" onClick={newChat} disabled={!!stop} sx={square}>
-              <PostAdd sx={{ fontSize: 18 }} />
-            </IconButton>
-          </span>
+        <ChatList agentId={agentId} current={shown.id} onDeletedCurrent={() => navigate(chatPath(agentId, null), { replace: true })} sx={square} />
+        <Tooltip title="New chat">
+          <IconButton aria-label="New chat" onClick={newChat} sx={square}>
+            <PostAdd sx={{ fontSize: 18 }} />
+          </IconButton>
         </Tooltip>
         <Tooltip title={panelOpen ? 'Hide files' : 'Show files'}>
           <IconButton aria-label="Files and preview" aria-pressed={panelOpen} onClick={() => showPanel(!panelOpen)} sx={{ ...square, ...(panelOpen && { bgcolor: 'var(--accentSoft)' }) }}>
@@ -258,17 +273,20 @@ function WorkspacePage({ agentId }: { agentId: string }) {
         <MenuItem onClick={() => (menu?.focus(), setDialog('delete'), setMenu(null))} sx={{ color: 'error.main' }}>Delete…</MenuItem>
       </Menu>
       {error && <Alert severity="error" onClose={() => setError('')} sx={{ borderRadius: 0 }}>{error}</Alert>}
+      {notice && <Alert severity="info" onClose={() => setNotice('')} sx={{ borderRadius: 0 }}>{notice}</Alert>}
 
       <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex', position: 'relative' }}>
         <Box sx={{ flexGrow: 1, minWidth: 0 }}>
           <Chat
-            key={chatEpoch}
+            key={shown.key}
             agentId={agentId}
-            initial={chatEpoch === 0 ? initial : undefined}
+            chatId={shown.id}
+            initial={shown.key === 0 ? initial : undefined}
+            onChatId={adopted}
+            onMissing={chatGone}
             onTurnStart={turnStarted}
             onTurnDone={afterTurn}
             onTitle={titled}
-            onRunning={running}
             onOpen={openFile}
           />
         </Box>
@@ -330,16 +348,6 @@ function WorkspacePage({ agentId }: { agentId: string }) {
       )}
       {dialog === 'delete' && live && <DeleteDialog agent={live} onClose={() => setDialog(null)} onDeleted={() => navigate('/')} />}
 
-      <Dialog open={guard.asking} onClose={guard.stay}>
-        <DialogTitle>The agent is still working</DialogTitle>
-        <DialogContent>
-          <Typography color="text.secondary">Leaving stops it. What it already changed stays in its files.</Typography>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={guard.stay} autoFocus>Stay</Button>
-          <Button variant="contained" color="error" onClick={guard.leave}>Leave and stop</Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   )
 }

@@ -25,6 +25,7 @@ export const routes: RouteObject[] = [
         children: [
           { index: true, element: <Home /> },
           { path: '/w/:agentId', element: <Suspense><Workspace /></Suspense> },
+          { path: '/w/:agentId/c/:chatId', element: <Suspense><Workspace /></Suspense> },
           { path: '/credentials', element: <Credentials /> },
           { path: '/agents/:agentId', element: <OldAgentLink /> },
         ],

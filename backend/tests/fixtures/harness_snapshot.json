@@ -1,0 +1,135 @@
+{
+ "scope": "agent",
+ "schema_version": "1.0",
+ "created_at": "2026-11-27T10:58:05.424786Z",
+ "data": {
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "text": "Create [**hello.py**](http://hello.py) that prints hello, run it once, and reply in one line."
+     },
+     {
+      "injected": {
+       "text": "<system-reminder>\n<environment>\nPlatform: Linux\nDate: 2026-11-27\nWorking directory: /data/workspaces/451730d7abe845929ee0d332df77a06a\n</environment>\n</system-reminder>",
+       "source": "strands:environment:injector"
+      }
+     }
+    ],
+    "tracking_id": "003e1bce-5770-4d43-84bb-f4a209eae37a"
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "toolUse": {
+       "toolUseId": "call_WfKxh336ZoSZwlYjTzHclgbL",
+       "name": "shell",
+       "input": {
+        "command": "pwd && ls -la && (test -f AGENTS.md && cat AGENTS.md || true) && printf 'print(\"hello\")\\n' > hello.py && python3 hello.py",
+        "timeout": 120
+       }
+      }
+     }
+    ],
+    "metadata": {
+     "usage": {
+      "inputTokens": 3422,
+      "outputTokens": 58,
+      "totalTokens": 3480,
+      "cacheReadInputTokens": 0
+     },
+     "metrics": {
+      "latencyMs": 0,
+      "timeToFirstByteMs": 2266
+     }
+    },
+    "tracking_id": "a5d69729-68d9-478c-a0cc-a4ca3b68a1de"
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "toolResult": {
+       "toolUseId": "call_WfKxh336ZoSZwlYjTzHclgbL",
+       "status": "success",
+       "content": [
+        {
+         "text": "{\"output\": \"/data/workspaces/451730d7abe845929ee0d332df77a06a\\ntotal 12\\ndrwxr-xr-x 4 1000 1000 4096 Nov 27 10:57 .\\ndrwxr-xr-x 3 1000 1000   60 Nov 27 10:58 ..\\ndrwxr-xr-x 3 1000 1000 4096 Nov 27 10:57 .agent\\ndrwxr-xr-x 7 1000 1000 4096 Nov 27 10:57 .git\\nhello\\n\", \"error\": \"\", \"exit_code\": 0}"
+        }
+       ]
+      }
+     }
+    ],
+    "tracking_id": "fc22bda0-3e64-44cd-8899-c1347d7c482b"
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "toolUse": {
+       "toolUseId": "call_tHgZKdEM0xdTrPco7jqUc1YA",
+       "name": "shell",
+       "input": {
+        "command": "git status --short",
+        "timeout": 120
+       }
+      }
+     }
+    ],
+    "metadata": {
+     "usage": {
+      "inputTokens": 3585,
+      "outputTokens": 23,
+      "totalTokens": 3608,
+      "cacheReadInputTokens": 3200
+     },
+     "metrics": {
+      "latencyMs": 0,
+      "timeToFirstByteMs": 1410
+     }
+    },
+    "tracking_id": "1d57b5f9-6b97-4fef-a002-3e3107eba1d1"
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "toolResult": {
+       "toolUseId": "call_tHgZKdEM0xdTrPco7jqUc1YA",
+       "status": "success",
+       "content": [
+        {
+         "text": "{\"output\": \"?? hello.py\\n\", \"error\": \"\", \"exit_code\": 0}"
+        }
+       ]
+      }
+     }
+    ],
+    "tracking_id": "81199717-e9dd-4aec-bc78-ac0434d1bd6d"
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "text": "Created `hello.py`, ran it once successfully (`hello`), and verified the repo is clean except for the new file."
+     }
+    ],
+    "metadata": {
+     "usage": {
+      "inputTokens": 3638,
+      "outputTokens": 28,
+      "totalTokens": 3666,
+      "cacheReadInputTokens": 3200
+     },
+     "metrics": {
+      "latencyMs": 0,
+      "timeToFirstByteMs": 1381
+     }
+    },
+    "tracking_id": "788bbf3e-d41a-49f8-966f-a04413c26c17"
+   }
+  ]
+ }
+}

@@ -3,6 +3,7 @@ import pytest
 from apps.chat.services import turn_service
 from core.config import get_settings
 from tests.helpers.accounts import own, sign_in_as
+from tests.helpers.turns import busy
 
 WS = "0123456789abcdef" * 2
 OTHER = "f" * 32
@@ -47,11 +48,8 @@ def test_delete_someone_elses_agent_is_not_found(client, fake_runner):
 
 
 def test_delete_while_a_turn_runs_is_refused(client, fake_runner):
-    turn_service._busy.add(f"{WS}/{'b' * 32}")
-    try:
+    with busy(WS, "b" * 32):
         r = client.delete(f"/api/agents/{WS}")
-    finally:
-        turn_service._busy.clear()
     assert r.status_code == 409 and code(r) == "agent_busy" and fake_runner.deleted == []
 
 

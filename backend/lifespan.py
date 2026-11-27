@@ -6,7 +6,13 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from apps.chat.repositories import chats
+from apps.chat.services import turn_service
+from apps.chat.services.legacy_import import import_older_chats
+from apps.chat.services.recorder import Writer
 from core.config import get_settings
+from sqlalchemy.ext.asyncio import async_sessionmaker
+
 from core.db import create_engine, migrate
 from sandbox.runner_sandbox import raise_for_runner_error, runner_client
 
@@ -33,7 +39,19 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(f"The runner at {settings.runner_socket} did not answer its health check") from exc
     logger.info("Echo api started")
     app.state.db_engine = create_engine(settings.data_dir)
+    # Whatever was running when the api last stopped is not running now; said before any page asks.
+    async with async_sessionmaker(app.state.db_engine)() as db:
+        if interrupted := await chats.interrupt_running(db):
+            logger.warning("Marked %s turns interrupted by the last shutdown", interrupted)
+        await db.commit()
+    if imported := await import_older_chats(app.state.db_engine, settings.data_dir):
+        logger.info("Imported %s chats from before chats were stored", imported)
+    app.state.chat_writer = Writer(app.state.db_engine)
+    app.state.chat_writer.start()
     try:
         yield
     finally:
+        # Turns first, so their interrupted state is queued before the writer drains.
+        await turn_service.shutdown()
+        await app.state.chat_writer.stop()
         await app.state.db_engine.dispose()

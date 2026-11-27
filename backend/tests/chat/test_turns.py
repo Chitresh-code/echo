@@ -9,6 +9,7 @@ from core.config import get_settings
 from apps.credentials.services import providers
 from tests.helpers.accounts import add_key, own, sign_in_as
 from tests.helpers.scripted_model import ScriptedModel
+from tests.helpers.turns import FakeWriter, busy
 
 WS, CHAT = "a" * 32, "b" * 32
 TURNS = f"/api/agents/{WS}/chats/{CHAT}/turns"
@@ -64,6 +65,8 @@ def run_turn(monkeypatch, fake_runner, model, prompt="say hi"):
 
 def test_turn_streams_text_tools_and_done(monkeypatch, fake_runner):
     events = run_turn(monkeypatch, fake_runner, shell_then_done())
+    assert events[0][0] == "turn" and len(events[0][1]["id"]) == 32
+    events = events[1:]
     assert [e for e, _ in events] == ["text", "tool", "text", "tool_detail", "tool_result", "text", "text", "done"]
     assert events[2][1]["text"] == "\n\n" and events[3][1]["detail"] == "echo hi" and events[4][1]["ok"] is True
     assert events[1][1]["name"] == "shell" and events[-1][1]["stopReason"] == "end_turn"
@@ -199,11 +202,8 @@ def test_missing_agent_is_404(client, fake_runner):
 
 def test_busy_chat_is_409(client, user, fake_runner):
     own(client, user, WS)
-    turn_service._busy.add(f"{WS}/{CHAT}")
-    try:
+    with busy(WS, CHAT):
         response = client.post(TURNS, json=turn("hi", ANY_KEY))
-    finally:
-        turn_service._busy.clear()
     assert response.status_code == 409 and response.json()["error"]["code"] == "chat_busy"
 
 
@@ -217,48 +217,77 @@ async def wait_for(condition, seconds=5):
             await asyncio.sleep(0.01)
 
 
-async def test_disconnect_stops_the_running_command(fake_runner):
+def start(chat, make_agent, timeout=60, **extra):
+    return turn_service.start_turn(FakeWriter(), WS, chat, make_agent, "go", timeout, title="go", **extra)
+
+
+async def test_leaving_the_stream_does_not_stop_the_turn(fake_runner):
+    fake_runner.lines = [DONE]
+    turn = start("1" * 32, agent_maker(shell_then_done()))
+    stream = turn_service.subscribe(turn)
+    assert (await anext(stream)).startswith("event: turn")
+    await stream.aclose()
+    await asyncio.wait_for(turn.ended.wait(), 5)
+    assert turn.status == "done" and turn.events[-1][0] == "done"
+
+
+async def test_stop_ends_the_running_command(fake_runner):
     fake_runner.lines = [DONE]
     fake_runner.hold = "sleep 100"
-    stream = turn_service.stream_turn("k1", agent_maker(shell_then_done("sleep 100")), "go", 60)
-    assert (await anext(stream)).startswith("event: text")
-    assert (await anext(stream)).startswith("event: tool")
+    turn = start("2" * 32, agent_maker(shell_then_done("sleep 100")))
     await wait_for(lambda: any(r["command"] == "sleep 100" for r in fake_runner.requests))
     fake_runner.closed.clear()
-    assert turn_service.is_busy("k1")
+    assert turn_service.is_busy(turn.chat_key)
 
-    await stream.aclose()
+    turn_service.stop(turn)
 
     await asyncio.to_thread(fake_runner.closed.wait, 5)
     assert fake_runner.closed.is_set()
-    await wait_for(lambda: not turn_service.is_busy("k1"))
+    await asyncio.wait_for(turn.ended.wait(), 5)
+    assert turn.status == "stopped" and turn.events[-1][0] == "stopped" and not turn_service.is_busy(turn.chat_key)
+
+
+async def test_a_late_reader_replays_the_turn_from_the_start(fake_runner):
+    fake_runner.lines = [DONE]
+    turn = start("3" * 32, agent_maker(shell_then_done()))
+    first = "".join([e async for e in turn_service.subscribe(turn)])
+    late = "".join([e async for e in turn_service.subscribe(turn)])
+    # The late reader gets the text joined into one event, the same chat.
+    assert parse(first)[0] == parse(late)[0] and parse(late)[-1][0] == "done"
+    text = lambda body: "".join(d["text"] for e, d in parse(body) if e == "text")
+    assert text(first) == text(late)
 
 
 async def test_turn_timeout_stops_the_turn(fake_runner):
     fake_runner.lines = [DONE]
     fake_runner.hold = "sleep 100"
-    events = [e async for e in turn_service.stream_turn("k2", agent_maker(shell_then_done("sleep 100")), "go", 1)]
-    assert events[-1].startswith("event: error") and "turn_timeout" in events[-1]
+    turn = start("4" * 32, agent_maker(shell_then_done("sleep 100")), timeout=1)
+    events = [e async for e in turn_service.subscribe(turn)]
+    assert events[-1].startswith("event: error") and "turn_timeout" in events[-1] and turn.status == "failed"
     await asyncio.to_thread(fake_runner.closed.wait, 5)
-    await wait_for(lambda: not turn_service.is_busy("k2"))
 
 
-async def test_a_racing_second_turn_gets_an_error_event(fake_runner):
-    turn_service._busy.add("k3")
-    try:
-        events = [e async for e in turn_service.stream_turn("k3", agent_maker(shell_then_done()), "go", 60)]
-    finally:
-        turn_service._busy.clear()
-    assert len(events) == 1 and "chat_busy" in events[0]
+async def test_a_racing_second_turn_is_refused(fake_runner):
+    with busy(WS, "5" * 32), pytest.raises(turn_service.TurnRefused) as refused:
+        start("5" * 32, agent_maker(shell_then_done()))
+    assert refused.value.code == "chat_busy"
 
 
 async def test_failure_becomes_an_error_event_without_its_text(fake_runner):
     def explode(delegation):
         raise RuntimeError("provider said: key sk-secret-123 is invalid")
 
-    events = [e async for e in turn_service.stream_turn("k4", explode, "go", 60)]
-    assert len(events) == 1 and "turn_failed" in events[0] and "sk-secret" not in events[0]
-    await wait_for(lambda: not turn_service.is_busy("k4"))
+    events = [e async for e in turn_service.subscribe(start("6" * 32, explode))]
+    assert len(events) == 2 and "turn_failed" in events[1] and "sk-secret" not in "".join(events)
+
+
+async def test_shutdown_interrupts_running_turns(fake_runner):
+    fake_runner.lines = [DONE]
+    fake_runner.hold = "sleep 100"
+    turn = start("7" * 32, agent_maker(shell_then_done("sleep 100")))
+    await wait_for(lambda: any(r["command"] == "sleep 100" for r in fake_runner.requests))
+    await turn_service.shutdown()
+    assert turn.status == "interrupted" and turn.ended.is_set()
 
 
 def hashes_in_turn(monkeypatch, *answers):
@@ -334,13 +363,12 @@ def test_too_many_turns_is_429(client, user, fake_runner, monkeypatch):
 async def test_running_turns_are_counted_per_user_and_released(fake_runner):
     fake_runner.lines = [DONE]
     fake_runner.hold = "sleep 100"
-    first = turn_service.stream_turn("k5", agent_maker(shell_then_done("sleep 100")), "go", 60, user_id="u1", max_running=1)
-    assert (await anext(first)).startswith("event: text")
-    # The same user's second chat is refused; another user is not.
-    second = [e async for e in turn_service.stream_turn("k6", agent_maker(shell_then_done()), "go", 60, user_id="u1", max_running=1)]
-    assert len(second) == 1 and "too_many_turns" in second[0]
-    assert turn_service.can_start("u2", 1)
-    await first.aclose()
+    first = start("8" * 32, agent_maker(shell_then_done("sleep 100")), user_id="u1", max_running=1)
+    # The same user's second chat is refused, even with no page reading the first; another user is not.
+    with pytest.raises(turn_service.TurnRefused) as refused:
+        start("9" * 32, agent_maker(shell_then_done()), user_id="u1", max_running=1)
+    assert refused.value.code == "too_many_turns" and turn_service.can_start("u2", 1)
+    turn_service.stop(first)
     await wait_for(lambda: turn_service.can_start("u1", 1))
     assert "u1" not in turn_service._running
 
@@ -349,7 +377,7 @@ async def test_a_failed_turn_releases_its_slot(fake_runner):
     def explode(delegation):
         raise RuntimeError("boom")
 
-    [e async for e in turn_service.stream_turn("k7", explode, "go", 60, user_id="u3", max_running=1)]
+    [e async for e in turn_service.subscribe(start("a1" * 16, explode, user_id="u3", max_running=1))]
     await wait_for(lambda: turn_service.can_start("u3", 1))
 
 

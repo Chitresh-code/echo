@@ -23,7 +23,7 @@ def test_startup_migrates_a_fresh_database_and_again_is_a_no_op(app, fake_runner
         pass
     with sqlite3.connect(path) as conn:
         assert conn.execute("select count(*) from users").fetchone() == (1,)
-        assert conn.execute("select version_num from alembic_version").fetchone() == ("0003",)
+        assert conn.execute("select version_num from alembic_version").fetchone() == ("0004",)
 
 
 def test_requests_get_a_session_with_foreign_keys_on(app, fake_runner):

@@ -4,6 +4,9 @@ import type { Usage } from './types'
 export type PlanItem = { text: string; status: 'pending' | 'in_progress' | 'completed' }
 
 export type TurnEvent =
+  // Always first: the turn's id, to follow it again or stop it. A reader that rejoins gets it again,
+  // followed by everything the turn has sent so far.
+  | { event: 'turn'; data: { id: string } }
   | { event: 'text'; data: { text: string } }
   | { event: 'tool'; data: { id: string; name: string } }
   // What a call acted on (its command, path, URL or task), once its input is complete.
@@ -21,6 +24,8 @@ export type TurnEvent =
   // learned: skill folders the turn changed; missing when they could not be compared.
   | { event: 'done'; data: { stopReason: string; usage: Usage; learned?: string[] } }
   | { event: 'error'; data: { code: string; message: string; request_id?: string } }
+  // Someone pressed Stop, in this tab or another.
+  | { event: 'stopped'; data: Record<string, never> }
   // The workspace's new name, in the first turn of an unnamed one; it can come after done.
   | { event: 'title'; data: { name: string } }
 
@@ -48,14 +53,15 @@ export class SseParser {
   }
 }
 
-/** POSTs a turn and yields its events as they arrive. A refused turn (a 4xx before the stream
- *  starts) throws ApiError like any other call. */
+/** Yields a turn's events as they arrive: POSTed with a body to start one, or fetched to follow one
+ *  already running. A refused request (a 4xx before the stream starts) throws ApiError like any
+ *  other call. Aborting only stops reading; the turn runs on, on the server. */
 export async function* streamTurn(url: string, body: unknown, signal: AbortSignal): AsyncGenerator<TurnEvent> {
   const response = await fetch(url, {
-    method: 'POST',
+    method: body === undefined ? 'GET' : 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   })
   if (!response.ok || !response.body) {

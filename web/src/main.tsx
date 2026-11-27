@@ -9,7 +9,6 @@ import { createBrowserRouter, RouterProvider } from 'react-router'
 import { routes } from './routes'
 import { EchoTheme } from './theme'
 
-// The data router, because leaving a page during a turn needs `useBlocker`.
 const router = createBrowserRouter(routes)
 
 createRoot(document.getElementById('root')!).render(

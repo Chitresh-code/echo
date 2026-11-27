@@ -15,7 +15,7 @@ def test_every_route_but_the_public_ones_needs_a_session(client, fake_runner):
     paths = {p: ops for p, ops in client.get("/api/openapi.json").json()["paths"].items() if p not in PUBLIC}
     assert len(paths) >= 8
     for template, operations in paths.items():
-        path = template.replace("{agent_id}", ID).replace("{chat_id}", ID)
+        path = template.replace("{agent_id}", ID).replace("{chat_id}", ID).replace("{turn_id}", ID)
         for method in operations:
             r = client.request(method, path, params={"path": "a.txt"}, json={"path": "a.txt", "content": "x", "prompt": "hi"})
             assert (r.status_code, r.json()["error"]["code"]) == (401, "not_signed_in"), f"{method} {template}"
@@ -44,6 +44,11 @@ def test_a_user_cannot_reach_another_users_agent(client, fake_runner):
         ("POST", f"/api/agents/{ws}/preview", {"json": {"port": 3000}}),
         ("POST", f"/api/agents/{ws}/chats", {}),
         ("POST", f"/api/agents/{ws}/chats/{ID}/turns", {"json": {"prompt": "hi", "credential_id": ID, "model": "m"}}),
+        ("GET", f"/api/agents/{ws}/chats", {}),
+        ("GET", f"/api/agents/{ws}/chats/{ID}", {}),
+        ("DELETE", f"/api/agents/{ws}/chats/{ID}", {}),
+        ("GET", f"/api/agents/{ws}/chats/{ID}/turns/{ID}/events", {}),
+        ("POST", f"/api/agents/{ws}/chats/{ID}/turns/{ID}/stop", {}),
     ]:
         r = client.request(method, path, **kwargs)
         assert (r.status_code, r.json()["error"]["code"]) == (404, "agent_not_found"), f"{method} {path}"

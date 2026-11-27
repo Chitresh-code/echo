@@ -45,7 +45,7 @@
       <h2 id="volumes">The two volumes</h2>
       <ul>
         <li><code>echo_sandbox-data</code> holds each agent's workspace: its files, its skills in <code>.agent/skills/</code> and the history of its changes, which is a git repository. It also holds the recent output of the agent's processes and each workspace's network address.</li>
-        <li><code>echo_api-data</code> holds Echo's database (people, agents and their encrypted model keys), each chat's conversation and each agent's notes.</li>
+        <li><code>echo_api-data</code> holds Echo's database (people, agents, their encrypted model keys and every chat's messages), the agent's own record of each conversation and each agent's notes.</li>
       </ul>
       <p>An agent's skills and its notes are in different volumes, so back up both together.</p>
 

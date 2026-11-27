@@ -8,6 +8,17 @@ def message(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
+def parse(chunk: str) -> list[tuple[str, dict]]:
+    """The events in what `message` wrote (one chunk may hold several), so a turn's events can be
+    stored as well as streamed. Only ever reads this module's own output."""
+    events = []
+    for block in chunk.split("\n\n"):
+        if block:
+            name, data = block.split("\n", 1)
+            events.append((name.removeprefix("event: "), json.loads(data.removeprefix("data: "))))
+    return events
+
+
 def to_sse(event: dict, seen_tools: set[str]) -> str | None:
     if isinstance(event.get("data"), str):
         return message("text", {"text": event["data"]})

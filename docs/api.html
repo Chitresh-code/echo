@@ -125,12 +125,14 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
   -H 'content-type: application/json' \
   -d '{"prompt": "Create a small Vite site that says hello, build it and commit it",
        "credential_id": "your key id", "model": "claude-sonnet-5-5"}'</code></pre>
+      <p>A turn runs on the server to its end whether or not anyone reads its stream, so closing the connection does not stop it.</p>
       <p><code>credential_id</code> is one of your keys and <code>model</code> one of its model ids. Each message names them again, so you can move a chat to another model or provider at any message. The new model sees the whole conversation, but not the earlier model's hidden reasoning.</p>
       <p>Add <code>"effort"</code> to choose how hard the model thinks: <code>auto</code> (the default, the level recommended for the model), <code>off</code>, <code>minimal</code>, <code>low</code>, <code>medium</code>, <code>high</code>, <code>xhigh</code> or <code>max</code>. A level the model does not take answers <code>effort_not_supported</code> with the levels it does take. Keys for an OpenAI-compatible service take only <code>auto</code>.</p>
 
       <h3 id="events">The reply stream</h3>
       <p>The reply streams back as server-sent events:</p>
       <dl class="codes">
+        <dt><code>turn</code></dt><dd><code>{id}</code>: always first, the turn's id, for following or stopping it.</dd>
         <dt><code>text</code></dt><dd>A piece of the agent's reply.</dd>
         <dt><code>tool</code></dt><dd>The agent started using a tool, such as <code>shell</code>, <code>read</code>, <code>write</code> or <code>edit</code>.</dd>
         <dt><code>tool_detail</code></dt><dd><code>{id, detail}</code>: what a tool call acted on (its command, path, address, task or skill), at most 200 characters, once its input is complete.</dd>
@@ -142,13 +144,22 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
         <dt><code>delegate_done</code></dt><dd><code>{id, ok}</code>: the subagent for that call ended, and whether it finished.</dd>
         <dt><code>title</code></dt><dd><code>{name}</code>: the name the workspace was given from your first message, sent once in the first turn of a workspace created without a name. It can arrive after <code>done</code>, so read the stream to its end. Until it comes, the workspace is named after the start of the message.</dd>
         <dt><code>done</code></dt><dd>The turn is over. <code>usage</code> holds the tokens it used on your model, subagents included (<code>inputTokens</code>, <code>outputTokens</code>, <code>cacheReadInputTokens</code>, <code>cacheWriteInputTokens</code>), not counting summaries made by the provider's small model. <code>learned</code> lists the skills the turn added, changed or removed.</dd>
+        <dt><code>stopped</code></dt><dd>The turn was stopped on request.</dd>
         <dt><code>error</code></dt><dd>The turn stopped early. It has a <code>code</code> and, when the server failed, a <code>request_id</code>.</dd>
       </dl>
       <ul>
         <li>One message at a time per chat: another one while the agent works answers <code>chat_busy</code>. More than 2 replies running at once across your chats (by default) answers 429 <code>too_many_turns</code>.</li>
         <li>A key id that is not yours answers <code>credential_not_found</code>. A model the key cannot use, or a key the provider has revoked, fails with <code>turn_failed</code> once the turn starts.</li>
         <li>A turn stops after 30 minutes (<code>ECHO_TURN_TIMEOUT</code>). Each command stops after 2 minutes (<code>ECHO_COMMAND_TIMEOUT</code>) unless the agent asks for longer, up to 30 (<code>ECHO_COMMAND_TIMEOUT_MAX</code>).</li>
-        <li>Stopping <code>curl</code> stops the turn and the command that was running. The app's stop button does not: there the turn finishes on the server.</li>
+      </ul>
+
+      <h3 id="stored">Stored chats</h3>
+      <ul>
+        <li><code>GET /api/agents/{id}/chats</code> lists the agent's chats, most recently used first, 50 at a time, each with <code>id</code>, <code>title</code>, <code>created_at</code>, <code>updated_at</code> and <code>running</code>. When <code>more</code> is true, ask again with <code>?before=</code> the last chat's id.</li>
+        <li><code>GET /api/agents/{id}/chats/{chat}</code> gives the chat with its latest 30 turns, oldest first. Each turn has its <code>prompt</code>, <code>model</code>, <code>effort</code>, <code>status</code> (<code>running</code>, <code>done</code>, <code>failed</code>, <code>stopped</code> or <code>interrupted</code> when Echo restarted during it), <code>usage</code>, times and the <code>events</code> its stream sent. <code>truncated</code> means the turn was too long to keep in full (over 5,000 events or 2 MB). For earlier turns, pass <code>?before=</code> the first turn's id while <code>more</code> is true.</li>
+        <li><code>GET /api/agents/{id}/chats/{chat}/turns/{turn}/events</code> streams the turn's events from its start: a running turn is followed to its end, an ended one is replayed.</li>
+        <li><code>POST /api/agents/{id}/chats/{chat}/turns/{turn}/stop</code> stops a running turn and the command it is running; its stream ends with <code>stopped</code>. <code>stopping</code> is false when the turn had already ended.</li>
+        <li><code>DELETE /api/agents/{id}/chats/{chat}</code> deletes the chat and the agent's memory of it, for good. It answers <code>chat_busy</code> while a turn runs and <code>chat_not_found</code> for a chat that does not exist.</li>
       </ul>
       <nav class="pager" aria-label="Previous and next">
         <a class="prev" href="data.html"><small>Previous</small>Data and backups</a>
