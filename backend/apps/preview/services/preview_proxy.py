@@ -5,6 +5,7 @@ What comes back is a page the agent wrote, so it is treated like any other site:
 on its own host, it never sees the preview cookie, and only Echo may frame it."""
 
 import html
+import json
 
 import httpx
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -67,6 +68,24 @@ def _response_headers(raw: list[tuple[bytes, bytes]], public_url: str) -> list[t
     return out
 
 
+# The runner's own refusals, as opposed to whatever the agent's server answers.
+_RUNNER_CODES = {"no_network", "upstream_unreachable"}
+
+
+async def _runner_error(response: httpx.Response) -> str | None:
+    """The runner's message when it, not the agent's server, answered: shown as a page instead of
+    JSON. A server that answers the same way only changes how its own error looks."""
+    if response.status_code not in (404, 502) or "content-encoding" in response.headers or not response.headers.get("content-type", "").startswith("application/json"):
+        return None
+    if int(response.headers.get("content-length") or 1 << 20) > 1024:
+        return None
+    try:
+        error = json.loads(await response.aread())["error"]
+    except (ValueError, KeyError, TypeError):
+        return None
+    return error.get("message") if isinstance(error, dict) and error.get("code") in _RUNNER_CODES else None
+
+
 async def serve(scope: Scope, receive: Receive, send: Send, agent_id: str, port: int) -> None:
     settings = get_settings()
     request = Request(scope, receive)
@@ -120,6 +139,15 @@ async def serve(scope: Scope, receive: Receive, send: Send, agent_id: str, port:
         await response.aclose()
         await client.aclose()
 
-    forwarded = StreamingResponse(response.aiter_raw(), status_code=response.status_code, background=BackgroundTask(close))
+    message = await _runner_error(response)
+    if message:
+        await close()
+        return await _page(response.status_code, message)(scope, receive, send)
+
+    async def read_already():
+        yield response.content
+
+    # Unencoded when it was read above, so the bytes read are the raw ones.
+    forwarded = StreamingResponse(read_already() if response.is_stream_consumed else response.aiter_raw(), status_code=response.status_code, background=BackgroundTask(close))
     forwarded.raw_headers = _response_headers(response.headers.raw, settings.public_url)
     await forwarded(scope, receive, send)

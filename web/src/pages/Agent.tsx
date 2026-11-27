@@ -7,6 +7,7 @@ import { Chat } from '../agent/Chat'
 import { Editor } from '../agent/Editor'
 import { Explorer } from '../agent/Explorer'
 import { Notes, Skills } from '../agent/Knowledge'
+import { Preview } from '../agent/Preview'
 import { useOpenFiles } from '../agent/files'
 import { statusLetters } from '../agent/tree'
 import { TopBar } from '../layout/TopBar'
@@ -27,6 +28,7 @@ function AgentPage({ agentId }: { agentId: string }) {
   const [error, setError] = useState('')
   const files = useOpenFiles(agentId)
   const [tab, setTab] = useState<'files' | 'skills' | 'notes'>('files')
+  const [view, setView] = useState<'editor' | 'preview'>('editor')
   // Bumped after each turn, so the skills and notes the agent changed show up.
   const [version, setVersion] = useState(0)
   const letters = useMemo(() => statusLetters(statuses), [statuses])
@@ -64,7 +66,10 @@ function AgentPage({ agentId }: { agentId: string }) {
     setVersion((v) => v + 1)
   }, [refreshTree, refresh])
 
-  const openFile = (path: string) => files.open(path, letters.has(path))
+  const openFile = (path: string) => {
+    setView('editor')
+    files.open(path, letters.has(path))
+  }
 
   async function create(path: string) {
     try {
@@ -91,6 +96,7 @@ function AgentPage({ agentId }: { agentId: string }) {
   }
 
   const panel = { borderColor: 'divider', minHeight: { xs: 480, md: 0 } }
+  const tabs = { minHeight: 36, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 36, py: 0, fontSize: 12, textTransform: 'none' } }
   return (
     <Box sx={{ height: { md: '100vh' }, minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
       <TopBar>
@@ -111,7 +117,7 @@ function AgentPage({ agentId }: { agentId: string }) {
       <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex', flexDirection: { xs: 'column', md: 'row' } }}>
         <Box sx={{ ...panel, width: { md: 248 }, flexShrink: 0, borderRight: { md: 1 }, borderBottom: { xs: 1, md: 0 }, bgcolor: 'background.paper', minHeight: { xs: 240, md: 0 } }}>
           <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-            <Tabs value={tab} onChange={(_, t) => setTab(t)} variant="fullWidth" sx={{ minHeight: 36, borderBottom: 1, borderColor: 'divider', '& .MuiTab-root': { minHeight: 36, py: 0, fontSize: 12, textTransform: 'none' } }}>
+            <Tabs value={tab} onChange={(_, t) => setTab(t)} variant="fullWidth" sx={tabs}>
               <Tab value="files" label="Files" />
               <Tab value="skills" label="Skills" />
               <Tab value="notes" label="Notes" />
@@ -121,8 +127,18 @@ function AgentPage({ agentId }: { agentId: string }) {
             {tab === 'notes' && <Notes agentId={agentId} version={version} />}
           </Box>
         </Box>
-        <Box sx={{ ...panel, flexGrow: 1, minWidth: 0 }}>
-          <Editor agentId={agentId} files={files} letters={letters} />
+        <Box sx={{ ...panel, flexGrow: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+          <Tabs value={view} onChange={(_, v) => setView(v)} sx={{ ...tabs, bgcolor: 'background.paper' }}>
+            <Tab value="editor" label="Editor" />
+            <Tab value="preview" label="Preview" />
+          </Tabs>
+          {/* Both stay mounted, so unsaved edits and a loaded preview survive switching. */}
+          <Box sx={{ flexGrow: 1, minHeight: 0, display: view === 'editor' ? 'block' : 'none' }}>
+            <Editor agentId={agentId} files={files} letters={letters} />
+          </Box>
+          <Box sx={{ flexGrow: 1, minHeight: 0, display: view === 'preview' ? 'block' : 'none' }}>
+            <Preview agentId={agentId} active={view === 'preview'} />
+          </Box>
         </Box>
         <Box sx={{ ...panel, width: { md: 400 }, flexShrink: 0, borderLeft: { md: 1 }, borderTop: { xs: 1, md: 0 } }}>
           <Chat agentId={agentId} onTurnDone={afterTurn} onOpen={openFile} />

@@ -200,3 +200,17 @@ def test_a_chunked_body_over_the_cap_is_refused(agent, client, fake_runner):
     chunks = (b"x" * 1024 * 1024 for _ in range(11))
     r = client.post("/upload", content=chunks, headers={"host": host(agent_id), "cookie": value})
     assert r.status_code == 413 and fake_runner.previews == []
+
+
+def test_a_runner_refusal_reads_as_a_page(agent, client, fake_runner):
+    agent_id, _ = agent
+    value = cookie_from(client, agent_id, start(client, agent_id)).split(";")[0]
+    refusal = b'{"success": false, "error": {"code": "upstream_unreachable", "message": "Nothing answered on port 3000.", "details": null}}'
+    fake_runner.preview_answer = (502, [("content-type", "application/json")], refusal)
+    r = client.get("/", headers={"host": host(agent_id), "cookie": value})
+    assert r.status_code == 502 and r.headers["content-type"].startswith("text/html") and "Nothing answered on port 3000." in r.text
+    # The agent's own server's JSON errors pass through untouched.
+    own = b'{"error": "not found"}'
+    fake_runner.preview_answer = (404, [("content-type", "application/json")], own)
+    r = client.get("/", headers={"host": host(agent_id), "cookie": value})
+    assert r.status_code == 404 and r.content == own

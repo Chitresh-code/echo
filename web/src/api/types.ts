@@ -22,3 +22,6 @@ export type Skill = { name: string; description: string; path: string; status: '
 export type Skills = { skills: Skill[]; truncated: boolean }
 export type Storage = { used_bytes: number; limit_bytes: number }
 export type Note = { name: string; text: string; updated_at: string }
+export type Process = { name: string; command: string; cwd: string | null; status: 'running' | 'exited'; exit_code: number | null; started_at: number }
+export type Processes = { processes: Process[]; ports: number[] }
+export type ProcessLog = { name: string; log: string }
