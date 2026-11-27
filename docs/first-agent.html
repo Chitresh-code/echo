@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Your first agent - Echo Guide</title>
+  <title>Your first workspace - Echo Guide</title>
   <link rel="icon" href="logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="style.css">
   <script src="guide.js"></script>
@@ -25,7 +25,7 @@
     <nav class="side" aria-label="Guide">
       <p>Using Echo</p>
       <a href="./">Welcome</a>
-      <a href="first-agent.html" aria-current="page">Your first agent</a>
+      <a href="first-agent.html" aria-current="page">Your first workspace</a>
       <a href="teaching.html">Teaching your agent</a>
       <a href="chatting.html">Chatting</a>
       <a href="files.html">Files and changes</a>
@@ -39,38 +39,39 @@
     </nav>
     <article>
       <p class="crumb">Using Echo</p>
-      <h1>Your first agent</h1>
-      <p class="lede">From signing in to an agent that has learned something, in about as long as it takes to describe the job.</p>
+      <h1>Your first workspace</h1>
+      <p class="lede">From signing in to a workspace whose agent has learned something, in about as long as it takes to describe the job.</p>
 
       <h2 id="sign-in">Sign in</h2>
       <p>Open Echo and choose <b>Sign in with Microsoft</b>. Use your work account, in the organization Echo was set up for. There is no separate Echo password, and your first sign-in creates your Echo account. The first time, Microsoft asks you to agree to share your name and email with Echo.</p>
-      <p>You stay signed in for 7 days. Sign out from the account menu at the top right.</p>
+      <p>You stay signed in for 7 days. Sign out from the account menu at the bottom of the sidebar.</p>
 
       <h2 id="add-a-key">Add a model key</h2>
-      <p>Your agents think with a model from a provider you pay for, using your own key. Open <b>Credentials</b> in the top bar, pick the provider, give the key a label and paste it. Echo checks the key with the provider before saving it. <a href="keys.html">Model keys</a> covers the providers and what to do if a key is refused.</p>
+      <p>Your workspaces think with a model from a provider you pay for, using your own key. Open <b>Credentials</b> at the top of the sidebar, pick the provider, give the key a label and paste it. Echo checks the key with the provider before saving it. Until you add one, the message box on the home screen is greyed out and points you there. <a href="keys.html">Model keys</a> covers the providers and what to do if a key is refused.</p>
 
-      <h2 id="create">Create the agent</h2>
-      <p>The <b>Agents</b> page is the first page you see. Choose <b>New agent</b> and give it:</p>
+      <h2 id="start">Start a workspace</h2>
+      <p>After you sign in, Echo opens on a single message box. Pick your key and a model under it, then ask for the work the way you would brief a colleague, and press Enter. There is nothing to fill in first: each message sent from the home screen starts a new workspace and opens it with your message as the first request.</p>
+      <p>A workspace is called "New workspace" until its first message. As the agent starts, the workspace is named from the start of your message, and a moment later by a short title the model writes. Click the name at the top of the workspace to call it something else; a name you choose is never replaced.</p>
+      <div class="tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg><p>Keep related work in one workspace. Its skills and notes build up around what you do there, so the same kind of work goes faster each time.</p></div>
+      <p>The agent also reads a purpose for the workspace at the start of every message, such as "Keep CHANGELOG.md current from merged work". Set it with <b>Name and purpose</b> in the workspace's <b>⋯</b> menu; it applies from your next message. If you leave it empty, the agent works it out from what you ask.</p>
+
+      <h2 id="sidebar">Find your way around</h2>
+      <p>The sidebar on the left has <b>New workspace</b>, which takes you back to the home screen, <b>Credentials</b>, and your recent workspaces, the most recently used first. Each one has a <b>⋯</b> menu with <b>Rename</b> and <b>Delete</b>. Your account menu, with sign out and the light or dark theme, is at the bottom. On a wide window the button at the top collapses the sidebar to a narrow rail, and Echo remembers that; on a phone the sidebar opens from the menu button.</p>
+      <p>A workspace's page is the chat, with a header above it:</p>
       <ul>
-        <li><b>A name</b> you will recognize, such as "Release notes".</li>
-        <li><b>The job</b> it does for you, in a sentence or two, such as "Keep CHANGELOG.md current from merged work".</li>
+        <li><b>The name</b>, which you can click to rename.</li>
+        <li><b>Changed</b>, the number of files changed since the last commit, when there are any.</li>
+        <li><b>New chat</b>, to start a fresh conversation in the same workspace.</li>
+        <li><b>The files button</b>, which opens the files panel beside the chat: the workspace's <b>Files</b>, its <b>Skills</b> (what it has learned) and its <b>Notes</b> (what it remembers from earlier chats), with the editor and the <b>Preview</b>. Drag its edge to make it wider or narrower. On a phone it covers the chat.</li>
+        <li><b>⋯</b>, with Rename, Name and purpose, and Delete.</li>
       </ul>
-      <p>The agent reads its name and job at the start of every message, so you can change either later with the pencil on the Agents page and it applies from your next message. If you leave the job empty, the agent works it out from what you ask and suggests you write it down.</p>
-      <div class="tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.3h6c0-1 .4-1.8 1-2.3A7 7 0 0 0 12 2z"/></svg><p>Give each agent one job. An agent that does one thing builds up skills that fit it, and stays on that job when you come back weeks later.</p></div>
-      <p>You can have up to 10 agents, unless whoever runs Echo set another number. To delete one, use the bin next to it on the Agents page. Its files, skills, notes and chats are removed for good, so there is no undo. An agent cannot be deleted while it is answering a message.</p>
 
-      <h2 id="agent-page">Find your way around</h2>
-      <p>Creating the agent opens its page, in three panels:</p>
-      <ul>
-        <li><b>Left:</b> tabs for the agent's <b>Files</b>, its <b>Skills</b> (what it has learned) and its <b>Notes</b> (what it remembers from earlier chats).</li>
-        <li><b>Middle:</b> the editor, where files and skills open.</li>
-        <li><b>Right:</b> the chat.</li>
-      </ul>
-      <p>On a narrow window the panels stack.</p>
+      <h2 id="limits">How many workspaces</h2>
+      <p>You can have up to 50 workspaces, unless whoever runs Echo set another number. When you reach the limit the home screen says so and keeps your message; delete a workspace you no longer need and send it again. Deleting removes its files, skills, notes and chats for good, so there is no undo, and a workspace cannot be deleted while it is answering a message.</p>
 
-      <h2 id="first-chat">Show it the job</h2>
-      <p>Pick your key and a model under the message box, then ask for the work the way you would brief a colleague. Watch what it does, then correct it: say what to change, and why if that helps. When it saves a correction as a skill, a <b>Learned</b> line appears under its reply.</p>
-      <p>That is the whole loop. <a href="teaching.html">Teaching your agent</a> goes deeper, and <a href="chatting.html">Chatting</a> covers the chat panel.</p>
+      <h2 id="first-chat">Correct it</h2>
+      <p>Watch what the agent does, then correct it: say what to change, and why if that helps. When it saves a correction as a skill, a <b>Learned</b> line appears under its reply.</p>
+      <p>That is the whole loop. <a href="teaching.html">Teaching your agent</a> goes deeper, and <a href="chatting.html">Chatting</a> covers the chat.</p>
 
       <h2 id="sign-in-failed">If sign-in fails</h2>
       <p>When sign-in does not work you land on this page, and the address ends with <code>?error=</code> and one of these:</p>

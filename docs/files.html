@@ -25,7 +25,7 @@
     <nav class="side" aria-label="Guide">
       <p>Using Echo</p>
       <a href="./">Welcome</a>
-      <a href="first-agent.html">Your first agent</a>
+      <a href="first-agent.html">Your first workspace</a>
       <a href="teaching.html">Teaching your agent</a>
       <a href="chatting.html">Chatting</a>
       <a href="files.html" aria-current="page">Files and changes</a>
@@ -43,7 +43,7 @@
       <p class="lede">Everything an agent makes lives in its workspace. You can read and edit any file, and see exactly what the agent changed.</p>
 
       <h2 id="files">The Files tab</h2>
-      <p>The <b>Files</b> tab on the left lists every file and folder in the workspace. A file changed since the last saved version of the workspace carries a letter:</p>
+      <p>The <b>Files</b> tab in the files panel, opened from the workspace header, lists every file and folder in the workspace. A file changed since the last saved version of the workspace carries a letter:</p>
       <figure>
         <div class="mock" aria-hidden="true">
           <div class="tabs"><span class="on">Files</span><span>Skills</span><span>Notes</span></div>
@@ -60,10 +60,10 @@
         <li><b>U</b> new</li>
         <li><b>D</b> deleted</li>
       </ul>
-      <p>The number of changed files shows next to the agent's name. The new-file button creates a file, and refresh reloads the list, which also happens after every reply.</p>
+      <p>The number of changed files shows in the workspace header. The new-file button creates a file, and refresh reloads the list, which also happens after every reply.</p>
 
       <h2 id="edit">Edit a file</h2>
-      <p>Click a file to open it in a tab in the editor, which switches the middle of the page back from <a href="chatting.html#servers">Preview</a> to <b>Editor</b> if needed. Save with the <b>Save</b> button or <kbd>Ctrl</kbd>+<kbd>S</kbd> (<kbd>Cmd</kbd>+<kbd>S</kbd> on a Mac). A tab with unsaved edits is marked, and the browser warns you before you leave with unsaved edits. Files that are not text show as "Binary file, not shown".</p>
+      <p>Click a file to open it in a tab in the editor, which switches the panel back from <a href="chatting.html#servers">Preview</a> to <b>Editor</b> if needed. Save with the <b>Save</b> button or <kbd>Ctrl</kbd>+<kbd>S</kbd> (<kbd>Cmd</kbd>+<kbd>S</kbd> on a Mac). A tab with unsaved edits is marked, and the browser warns you before you leave with unsaved edits. Files that are not text show as "Binary file, not shown".</p>
       <p>If the agent changes a file you have open with unsaved edits, your text stays and the editor tells you the file changed, with a button to reload it.</p>
 
       <h2 id="diff">See what changed</h2>
@@ -73,7 +73,7 @@
       <h2 id="storage">Storage limit</h2>
       <p>Each agent has room for 2 GB, unless whoever runs Echo set another limit. That covers its files and the tools it installs for itself. The bottom of the Files tab shows how much it uses, in yellow once it passes 90%.</p>
       <p>When an agent goes over its limit, it can still read and delete files but cannot write any, and neither can you from the editor. The agent is told this on its next command, so you can ask it to clean up: build output, <code>node_modules</code> and downloaded packages are usually the biggest. A single command can take an agent past the limit before it is stopped.</p>
-      <p>To free all of an agent's space at once, delete the agent with the bin next to it on the Agents page. That removes its files, skills, notes and chats for good.</p>
+      <p>To free all of a workspace's space at once, delete it with <b>Delete</b> in its <b>⋯</b> menu, in the sidebar or the workspace header. That removes its files, skills, notes and chats for good.</p>
 
       <h2 id="limits">Good to know</h2>
       <ul>

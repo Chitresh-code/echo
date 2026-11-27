@@ -7,7 +7,6 @@ import { useEffect, useState } from 'react'
 import { api, errorText } from '../api/client'
 import { PROVIDERS, type Credential, type Provider, type ProviderModel } from '../api/types'
 import { ago } from '../format'
-import { TopBar } from '../layout/TopBar'
 import { MONO } from '../theme'
 
 const card = { border: 1, borderColor: 'divider', borderRadius: '12px', bgcolor: 'background.paper' }
@@ -178,7 +177,6 @@ export function Credentials() {
 
   return (
     <Box sx={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
-      <TopBar />
       <Box component="main" sx={{ width: '100%', maxWidth: 1120, mx: 'auto', px: 2, py: 6, display: 'flex', flexDirection: 'column', gap: 3 }}>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
           <Typography component="h1" sx={{ fontSize: 24, fontWeight: 600, letterSpacing: '-0.01em' }}>Credentials</Typography>

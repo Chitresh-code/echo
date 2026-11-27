@@ -23,6 +23,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }, [])
 
+  // After sign out, once the message boxes have closed: closing saves their last text as a draft.
+  useEffect(() => {
+    if (user === null) clearDrafts()
+  }, [user])
+
   return <AuthContext.Provider value={{ user, signOut }}>{children}</AuthContext.Provider>
 }
 
@@ -31,4 +36,15 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   if (user === undefined) return null
   if (user === null) return <Navigate to="/signin" replace />
   return children
+}
+
+export const DRAFT_PREFIX = 'echo.draft.'
+
+/** Unsent messages are kept per tab while typing; the next person at this browser must not see them. */
+function clearDrafts() {
+  try {
+    for (const key of Object.keys(sessionStorage)) if (key.startsWith(DRAFT_PREFIX)) sessionStorage.removeItem(key)
+  } catch {
+    // Storage refused (private mode): nothing was saved either.
+  }
 }

@@ -39,7 +39,8 @@ def own(client, user_id: str, agent_id: str) -> None:
 
     async def work(db):
         await db.execute(agents.agents.delete().where(agents.agents.c.id == agent_id))
-        await agents.add(db, agent_id, user_id)
+        # Named, as a workspace that was never named gets titled on its first turn.
+        await agents.add(db, agent_id, user_id, "Test agent")
 
     _run(client, work)
 

@@ -33,8 +33,8 @@ class Settings:
     ms_client_secret: str = field(repr=False)
     # A Fernet key: encrypts stored provider keys and, through a derived key, signs the sign-in cookie.
     secret_key: str = field(repr=False)
-    # Agents one user may have; with the runner's per-agent disk limit this bounds a user's disk.
-    max_agents: int = 10
+    # Workspaces one user may have. Every message from the home screen starts one, so this is set high; with the runner's per-agent disk limit this bounds a user's disk.
+    max_agents: int = 50
     # Turns one user may have running at once, across all their chats.
     max_running_turns: int = 2
     # Where previews of the agents' dev servers are served, as scheme://domain[:port], each agent and
@@ -127,7 +127,7 @@ def load_settings(env: Mapping[str, str] = os.environ) -> Settings:
         ms_client_id=_guid(env, "ECHO_MS_CLIENT_ID"),
         ms_client_secret=_required(env, "ECHO_MS_CLIENT_SECRET"),
         secret_key=_secret_key(env),
-        max_agents=_positive_int(env, "ECHO_MAX_AGENTS", 10),
+        max_agents=_positive_int(env, "ECHO_MAX_AGENTS", 50),
         max_running_turns=_positive_int(env, "ECHO_MAX_RUNNING_TURNS", 2),
         preview_url=_preview_url(env, public_url),
     )

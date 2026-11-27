@@ -57,4 +57,8 @@ describe('apply', () => {
       { kind: 'text', text: 'Reading.' },
     ])
   })
+  it('leaves the message as it is for a title, which renames the workspace instead', () => {
+    const m = { role: 'agent' as const, parts: [] }
+    expect(apply(m, { event: 'title', data: { name: 'Flaky test fix' } })).toBe(m)
+  })
 })

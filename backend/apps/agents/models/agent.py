@@ -22,8 +22,13 @@ Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 Job = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
 
 
+# What a workspace is called until its first message names it.
+DEFAULT_NAME = "New workspace"
+
+
 class NewAgent(BaseModel):
-    name: Name
+    # Optional, so the home screen can start a workspace from a message alone.
+    name: Name | None = None
     job: Job = ""
 
 

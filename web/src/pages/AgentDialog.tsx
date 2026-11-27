@@ -10,7 +10,7 @@ type Props = {
   onClose: () => void
 }
 
-/** Name and job of an agent, for creating one or changing it. */
+/** A workspace's name and purpose, which the agent working in it reads each turn. */
 export function AgentDialog({ title, submitLabel, initial, onSubmit, onClose }: Props) {
   const [name, setName] = useState(initial?.name ?? '')
   const [job, setJob] = useState(initial?.job ?? '')
@@ -36,12 +36,12 @@ export function AgentDialog({ title, submitLabel, initial, onSubmit, onClose }: 
         {error && <Alert severity="error">{error}</Alert>}
         <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} required autoFocus slotProps={{ htmlInput: { maxLength: 80 } }} />
         <TextField
-          label="Job"
+          label="Purpose"
           value={job}
           onChange={(e) => setJob(e.target.value)}
           multiline
           minRows={3}
-          placeholder="The one task you will teach it, such as: Match Stripe payouts to the ledger each week"
+          placeholder="What this workspace is for, such as: Match Stripe payouts to the ledger each week"
           helperText={`${job.length}/500`}
           slotProps={{ htmlInput: { maxLength: 500 } }}
         />

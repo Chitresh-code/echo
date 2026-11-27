@@ -25,7 +25,7 @@
     <nav class="side" aria-label="Guide">
       <p>Using Echo</p>
       <a href="./">Welcome</a>
-      <a href="first-agent.html">Your first agent</a>
+      <a href="first-agent.html">Your first workspace</a>
       <a href="teaching.html">Teaching your agent</a>
       <a href="chatting.html" aria-current="page">Chatting</a>
       <a href="files.html">Files and changes</a>
@@ -40,7 +40,7 @@
     <article>
       <p class="crumb">Using Echo</p>
       <h1>Chatting</h1>
-      <p class="lede">You give an agent work in the chat on the right of its page. It does the work in its own workspace: it reads and edits files, runs commands, installs packages and keeps a history of its changes.</p>
+      <p class="lede">You give the agent work in the chat that fills each workspace's page. It does the work in that workspace: it reads and edits files, runs commands, installs packages and keeps a history of its changes.</p>
 
       <h2 id="send">Send a message</h2>
       <p>Below the message box:</p>
@@ -48,10 +48,17 @@
         <li><b>The model button</b> picks one of your keys and one of its models. Without a key, it links to Credentials instead.</li>
         <li><b>Effort</b> sets how hard the model thinks. <b>auto</b> uses the level recommended for the model. Higher levels help with hard tasks but are slower and cost more. Keys for an OpenAI-compatible service take only auto.</li>
       </ul>
-      <p><kbd>Enter</kbd> sends and <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line. Your browser remembers the model and effort you chose. You can switch to another model or provider at any message, and the new model sees the whole conversation so far.</p>
+      <p><kbd>Enter</kbd> sends and <kbd>Shift</kbd>+<kbd>Enter</kbd> starts a new line. In a code block <kbd>Enter</kbd> adds a line, and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on a Mac) sends from anywhere. Your browser remembers the model and effort you chose. You can switch to another model or provider at any message, and the new model sees the whole conversation so far.</p>
+
+      <h2 id="format">Format a message</h2>
+      <p>The message box formats as you type, using Markdown: <code>**bold**</code>, <code>*italic*</code>, <code>`code`</code>, three backticks and a space for a code block, <code>- </code> or <code>1. </code> at the start of a line for a list and <code>&gt; </code> for a quote. Web addresses that start with <code>http://</code>, <code>https://</code> or <code>www.</code> become links; file names such as <code>hello.py</code> stay text. Pasted Markdown keeps its formatting, and text pasted from a web page keeps only that formatting, never images or scripts. The message is sent, and shown in the chat, as Markdown.</p>
+      <p>A message can be up to 100,000 characters; a counter shows near the limit.</p>
+
+      <h2 id="drafts">Unsent messages</h2>
+      <p>What you type and have not sent is kept for each workspace, and for the home screen, while the browser tab stays open, so you can go to Credentials or another workspace and come back to it. Signing out clears it. If a message cannot be sent, such as when you are at the workspace limit or a reply is still running, it stays in the box with the reason above it.</p>
 
       <h2 id="follow">Follow along</h2>
-      <p>The reply appears as it is written. Each tool the agent uses shows as a row with the tool's name, such as <code>shell</code>, <code>read</code>, <code>edit</code> or <code>write</code>, and what it acted on: the command, the file, the web address or the skill it loaded. A row turns red when the call failed. The output of commands is not shown; the agent tells you what matters. When the reply is done you see the tokens it used and how long it took, and the file list reloads, since the agent may have changed files.</p>
+      <p>The reply appears as it is written. Each tool the agent uses shows as a row with the tool's name, such as <code>shell</code>, <code>read</code>, <code>edit</code> or <code>write</code>, and what it acted on: the command, the file, the web address or the skill it loaded. A row turns red when the call failed. The output of commands is not shown; the agent tells you what matters. When the reply is done you see the tokens it used and how long it took, and the files panel reloads, since the agent may have changed files.</p>
       <p>When the reply added, changed or removed a skill, a <b>Learned</b> line names it. <a href="teaching.html">Teaching your agent</a> explains it.</p>
 
       <h2 id="plans">Plans and subagents</h2>
@@ -61,9 +68,10 @@
       <h2 id="stop-and-new">Stop, and start fresh</h2>
       <ul>
         <li><b>Stop</b> stops the reply and the command it is running. A command a subagent is running finishes first. What the agent already changed stays in its files.</li>
-        <li><b>New chat</b> starts a fresh conversation. The agent keeps its skills, notes and files across chats; only the conversation starts over.</li>
+        <li><b>New chat</b>, in the workspace header, starts a fresh conversation. The agent keeps its skills, notes and files across chats; only the conversation starts over.</li>
       </ul>
       <p>Reloading the page keeps the same chat, so the agent still remembers it, but earlier messages are not shown again.</p>
+      <p>A reply runs only while its page is open. If you go to another page or close the tab while the agent is working, Echo asks first, and leaving stops the reply. What it already changed stays in its files.</p>
 
       <h2 id="what-it-can-do">What the agent can do</h2>
       <p>It runs shell commands, reads, writes and edits files, fetches web pages, uses the provider's web search where there is one, loads its skills and searches its notes. When a task changes files it saves them to the workspace's history, and it ends each reply with what it changed, how it checked it and anything it could not do.</p>
@@ -73,7 +81,7 @@
 
       <h2 id="servers">Servers and previews</h2>
       <p>Each agent's workspace has its own network, so a server the agent starts in one command answers the next one at <code>localhost</code>, and no other agent can reach it. The agent starts servers and watchers, such as <code>npm run dev</code>, as <b>processes</b> that keep running after the command that started them. Ask it to start one, and to say which port it listens on.</p>
-      <p>Open <b>Preview</b> above the editor to see them:</p>
+      <p>Open the files panel from the workspace header and choose <b>Preview</b> above the editor to see them:</p>
       <ul>
         <li>Each process with its command and whether it is running or has exited. <b>Output</b> shows what it printed, and <b>Stop</b> stops it.</li>
         <li>The ports listening in the workspace. Select one to show its page under the list. <b>Reload</b> shows changes, and <b>Open in a new tab</b> opens the page on its own.</li>

@@ -21,6 +21,8 @@ export type TurnEvent =
   // learned: skill folders the turn changed; missing when they could not be compared.
   | { event: 'done'; data: { stopReason: string; usage: Usage; learned?: string[] } }
   | { event: 'error'; data: { code: string; message: string; request_id?: string } }
+  // The workspace's new name, in the first turn of an unnamed one; it can come after done.
+  | { event: 'title'; data: { name: string } }
 
 /** Splits a server-sent event stream into events. Chunks can end anywhere, even mid-line, so the
  *  unfinished tail is kept for the next chunk. */

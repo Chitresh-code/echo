@@ -16,10 +16,10 @@ export function SignIn() {
         </Box>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
           <Typography component="h1" sx={{ fontSize: 28, lineHeight: 1.2, fontWeight: 600, letterSpacing: '-0.01em' }}>
-            An agent that learns your job
+            The self-improving agent harness
           </Typography>
           <Typography color="text.secondary" sx={{ fontSize: 15, lineHeight: 1.55 }}>
-            Teach Echo one task by doing it together. It remembers your corrections, writes its own skills and gets better each time you come back.
+            Run agents with their own workspace, tools and models. Echo learns from every run and refines its own skills, instructions and memory, so each agent gets better with use.
           </Typography>
         </Box>
         {/* A full page load, not a client route: sign-in leaves for Microsoft and comes back. */}
@@ -27,7 +27,7 @@ export function SignIn() {
           Sign in with Microsoft
         </Button>
         <Typography color="text.secondary" sx={{ pt: 2.5, borderTop: 1, borderColor: 'divider', fontSize: 13, lineHeight: 1.55 }}>
-          Use your work account. Who can sign in is managed by your admin in Microsoft Entra.
+          Sign in with your organization's Microsoft account. Access is managed by your administrator.
         </Typography>
       </Box>
     </Box>

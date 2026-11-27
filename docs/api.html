@@ -25,7 +25,7 @@
     <nav class="side" aria-label="Guide">
       <p>Using Echo</p>
       <a href="./">Welcome</a>
-      <a href="first-agent.html">Your first agent</a>
+      <a href="first-agent.html">Your first workspace</a>
       <a href="teaching.html">Teaching your agent</a>
       <a href="chatting.html">Chatting</a>
       <a href="files.html">Files and changes</a>
@@ -80,7 +80,7 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
       <pre><code>curl -b "$ECHO" -X POST http://localhost:8000/api/agents \
   -H 'content-type: application/json' \
   -d '{"name": "Release notes", "job": "Keep CHANGELOG.md current from merged work"}'</code></pre>
-      <p><code>name</code> is 1 to 80 characters and <code>job</code> up to 500.</p>
+      <p><code>name</code> is 1 to 80 characters and <code>job</code> up to 500. Both are optional: without a name the workspace is called "New workspace" until its first message names it, which the turn reports as a <code>title</code> event.</p>
       <ul>
         <li><code>GET /api/agents</code> lists your agents, most recently used first.</li>
         <li><code>GET /api/agents/{id}</code> returns one, and <code>PATCH /api/agents/{id}</code> with <code>name</code> or <code>job</code> changes it.</li>
@@ -91,7 +91,7 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
       </ul>
       <p>Someone else's agent answers <code>agent_not_found</code>, the same as one that does not exist.</p>
       <dl class="codes">
-        <dt><code>agent_limit_reached</code></dt><dd>You have as many agents as allowed (10 by default). Delete one first.</dd>
+        <dt><code>agent_limit_reached</code></dt><dd>You have as many workspaces as allowed (50 by default). Delete one first.</dd>
         <dt><code>agent_busy</code></dt><dd>A delete while one of the agent's chats is answering. Wait for it to end.</dd>
         <dt><code>disk_quota_exceeded</code></dt><dd>Saving a file to an agent over its storage limit (507).</dd>
       </dl>
@@ -140,6 +140,7 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
         <dt><code>delegate</code></dt><dd><code>{id, task}</code>: a subagent started for the <code>subagent</code> tool call <code>id</code>.</dd>
         <dt><code>delegate_tool</code>, <code>delegate_tool_result</code></dt><dd><code>{delegate, id, name, detail}</code> and <code>{delegate, id, ok}</code>: a subagent's tool calls, with <code>delegate</code> naming its <code>subagent</code> call.</dd>
         <dt><code>delegate_done</code></dt><dd><code>{id, ok}</code>: the subagent for that call ended, and whether it finished.</dd>
+        <dt><code>title</code></dt><dd><code>{name}</code>: the name the workspace was given from your first message, sent once in the first turn of a workspace created without a name. It can arrive after <code>done</code>, so read the stream to its end. Until it comes, the workspace is named after the start of the message.</dd>
         <dt><code>done</code></dt><dd>The turn is over. <code>usage</code> holds the tokens it used on your model, subagents included (<code>inputTokens</code>, <code>outputTokens</code>, <code>cacheReadInputTokens</code>, <code>cacheWriteInputTokens</code>), not counting summaries made by the provider's small model. <code>learned</code> lists the skills the turn added, changed or removed.</dd>
         <dt><code>error</code></dt><dd>The turn stopped early. It has a <code>code</code> and, when the server failed, a <code>request_id</code>.</dd>
       </dl>

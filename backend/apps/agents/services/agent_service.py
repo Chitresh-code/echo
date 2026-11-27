@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from strands.sandbox.errors import SandboxPathNotFoundError
 
 from apps.agents.models.agent import (
+    DEFAULT_NAME,
     MAX_FILE_BYTES,
     Agent,
     AgentUpdate,
@@ -67,12 +68,12 @@ def _failed(result, what: str) -> AppError:
 
 async def create_agent(settings: Settings, db: AsyncSession, owner_id: str, new: NewAgent) -> Agent:
     if await agents.count_for(db, owner_id) >= settings.max_agents:
-        raise AppError(409, "agent_limit_reached", f"You have {settings.max_agents} agents, the most allowed. Delete one to make another.")
+        raise AppError(409, "agent_limit_reached", f"You have {settings.max_agents} workspaces, the most allowed. Delete one to start another.")
     agent_id = uuid.uuid4().hex
     # The runner first: a failed insert leaves an unused folder, never a row pointing at nothing.
     async with runner_client(settings.runner_socket) as client:
         await raise_for_runner_error(await client.post(f"/workspaces/{agent_id}"))
-    agent = await agents.add(db, agent_id, owner_id, new.name, new.job)
+    agent = await agents.add(db, agent_id, owner_id, new.name or DEFAULT_NAME, new.job)
     await db.commit()
     return agent
 
@@ -92,7 +93,7 @@ async def delete_agent(settings: Settings, db: AsyncSession, owner_id: str, agen
     """Files first and the row last, so a failure part way leaves the agent listed and the delete
     can be repeated; every step skips what is already gone."""
     if turn_service.agent_busy(agent_id):
-        raise AppError(409, "agent_busy", "This agent has a turn in progress. Stop it or wait for it to end, then delete.")
+        raise AppError(409, "agent_busy", "This workspace has a turn in progress. Stop it or wait for it to end, then delete.")
     async with runner_client(settings.runner_socket) as client:
         response = await client.delete(f"/workspaces/{agent_id}")
         if response.status_code != 404:
@@ -205,7 +206,7 @@ async def git_file_versions(settings: Settings, agent_id: str, path: str) -> Git
 
 
 def _not_found() -> AppError:
-    return AppError(404, "agent_not_found", "There is no agent with this id.")
+    return AppError(404, "agent_not_found", "There is no workspace with this id.")
 
 
 async def require_agent(db: AsyncSession, owner_id: str, agent_id: str) -> str:

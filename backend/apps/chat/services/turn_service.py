@@ -4,7 +4,7 @@ turn time limit and a client disconnect can both stop it cleanly, wherever the s
 import asyncio
 import logging
 import threading
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 
 from strands import Agent
 
@@ -23,6 +23,10 @@ _busy: set[str] = set()
 _running: dict[str, int] = {}
 # Path to checksum of every file under the workspace's skills folder.
 Snapshot = Callable[[], Awaitable[dict[str, str]]]
+# Work that runs beside a turn and may report one event, such as naming a new workspace.
+SideTask = Callable[[], Awaitable[str | None]]
+# Side tasks outlive a closed stream, so they hold a reference here until they end.
+_side_running: set[asyncio.Task] = set()
 
 
 def is_busy(chat_key: str) -> bool:
@@ -96,6 +100,14 @@ async def _run(
         await queue.put(None)
 
 
+async def _side(work: SideTask, queue: asyncio.Queue) -> None:
+    try:
+        if (sse := await work()) is not None:
+            await queue.put(sse)
+    except Exception:
+        logger.warning("Side task of a turn failed", exc_info=True)
+
+
 async def stream_turn(
     chat_key: str,
     make_agent: Callable[[Delegation], Agent],
@@ -104,6 +116,7 @@ async def stream_turn(
     snapshot: Snapshot | None = None,
     user_id: str = "",
     max_running: int | None = None,
+    side_tasks: Sequence[SideTask] = (),
 ) -> AsyncIterator[str]:
     # The router already refused these; the checks here cover requests racing past it.
     if chat_key in _busy:
@@ -119,9 +132,20 @@ async def stream_turn(
     task = asyncio.create_task(_run(make_agent, prompt, timeout, cancel, queue, snapshot))
     # Released only once the agent task has fully ended, however the turn ended.
     task.add_done_callback(lambda _: _release(chat_key, user_id))
+    # Not cancelled with the turn: each bounds its own time, and its result (a workspace's name)
+    # should land even if the page went away.
+    side = [asyncio.create_task(_side(work, queue)) for work in side_tasks]
+    for s in side:
+        _side_running.add(s)
+        s.add_done_callback(_side_running.discard)
     try:
         while (item := await queue.get()) is not None:
             yield item
+        # The agent is done; side work still running reports before the stream closes, so its
+        # event can come after done.
+        await asyncio.gather(*side)
+        while not queue.empty():
+            yield queue.get_nowait()
     finally:
         # Reached when the turn ends and when the client goes away. Cancelling the task closes any
         # runner request in flight, and the runner then kills that command's jail.

@@ -8,6 +8,34 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
+## 0.11.0 (2026-11-27)
+
+Chat-first app shell.
+
+### Added
+
+- A workspace can be created without a name (`POST /api/agents` with `{}`). It is called "New workspace" until its first message, which names it at once from the start of the message and then by a short title the model writes, sent to the chat as a `title` event. A name the user sets first always wins. A title that fails or takes longer than 15 seconds leaves the first name and never fails the turn; the stream can stay open up to that long after `done` to deliver it.
+
+- A sidebar on every signed-in page: New workspace, Credentials, the recent workspaces with Rename and Delete, and the account menu with the theme switch. It collapses to a rail on wide screens, remembered in the browser, and opens as a drawer on narrow ones.
+- A rich text message box (Tiptap): bold, italic, code, code blocks, lists, quotes and links by Markdown shortcuts or Cmd/Ctrl with B, I and E, sent as Markdown. Only addresses typed with http, https, mailto or www become links by themselves, so a file name such as hello.py stays text. Enter sends; Shift+Enter starts a new paragraph or list item; inside a code block Enter adds a line and Cmd/Ctrl+Enter sends; Enter while an input method is composing never sends. Pasted Markdown becomes formatting and pasted web pages keep only that formatting. Unsent text is kept per workspace in the browser tab, a refused send puts the message back, and a counter shows near the 100,000 character limit.
+- The home page is a message box: each message starts a new workspace (no name or job to fill in) and opens it with the message. A refused start, such as the workspace limit, says why and keeps the message; with no model key the box is off and links to Credentials.
+- A new workspace page around the chat. The header shows the workspace's name, which updates live as the first message names it and again when the title arrives, and which can be renamed by clicking it; a count of changed files; New chat; a button for the files panel; and a menu with Rename, Name and purpose, and Delete. The browser tab shows the name too. Your own messages show their Markdown formatting.
+- The files panel (files, skills, notes, editor and preview) opens beside the chat, remembered in the browser, and can be resized by dragging or with the arrow keys from 320 pixels to 60% of the window. It opens by itself when the chat links to a file or a learned skill, and keeps unsaved edits while hidden. On a narrow screen it covers the chat.
+- Leaving a workspace while its agent is working asks first: Stay keeps the turn running, Leave and stop stops it. Closing or reloading the tab warns too. Signing out never asks.
+
+### Changed
+
+- Workspaces open at `/w/<id>`; old `/agents/<id>` links redirect there. The Agents page and the top bar are gone, since the sidebar is the list.
+- The message from home is sent exactly once: a reload or Back never sends it again, and if it cannot be sent it stays in the box. A turn refused before it starts puts the message back; a connection lost mid-turn says the turn stopped and that what the agent already changed stays in its files.
+- Chat errors show the message and the request id only, no longer the error code.
+- When model keys fail to load, the model picker says so with Retry, instead of asking to add a key.
+- Renaming from a menu keeps the name field open; before, the menu took focus back and ended the rename at once. Closing those menus returns focus to their button.
+- Signing out clears unsent message drafts kept in the browser tab, including text typed just before signing out.
+- Each user may now have 50 workspaces by default instead of 10 (`ECHO_MAX_AGENTS`), since every message from the home screen starts one. With the default 2 GB per workspace, size the disk for up to 100 GB per person, or lower either setting.
+- Errors about a workspace's limit, a turn in progress and a missing workspace say "workspace" instead of "agent". The error codes are unchanged.
+- The user guide describes the home screen, the sidebar and the workspace page: "Your first agent" is now "Your first workspace" (same address), and Chatting covers formatting, unsent messages and leaving during a reply.
+- The sign-in page, agent pages, user guide and README describe Echo as a self-improving agent harness, and an agent's "Job" is now called its purpose. The API field is still `job`.
+
 ## 0.10.0 (2026-11-27)
 
 Agent networks and live preview.

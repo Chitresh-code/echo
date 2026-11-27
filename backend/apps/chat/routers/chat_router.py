@@ -1,10 +1,14 @@
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from apps.chat.models.chat import Chat, TurnRequest
+from apps.agents.models.agent import DEFAULT_NAME
+from apps.agents.services import titles
 from apps.chat.services import agent_factory, turn_service
+from apps.chat.services.sse import message
 from apps.credentials.services import credential_service, providers
 from apps.agents.repositories import agents
 from apps.agents.routers.agent_router import CurrentUser, Db, OwnedAgent
@@ -20,7 +24,7 @@ router = APIRouter(dependencies=[Depends(current_user)])
 
 @router.post("/api/agents/{agent_id}/chats", summary="Start a chat with an agent", tags=["chat"])
 async def create_chat(agent_id: OwnedAgent) -> Chat:
-    # shortcut: chats are not stored, so there is no chat list or history; add them with the browser UI.
+    # shortcut: chats are not stored, so there is no chat list or history and a reload shows no earlier messages; store chats, messages and usage in the database when sessions become resumable.
     return Chat(id=uuid.uuid4().hex)
 
 
@@ -29,12 +33,13 @@ async def create_chat(agent_id: OwnedAgent) -> Chat:
     summary="Send a message and stream the agent's turn as server-sent events",
     description="`credential_id` is one of your keys and `model` a model it can use. "
     "Streams `text` ({text}), `tool` ({id, name}) and then `done` ({stopReason, usage}) or `error` ({code, message}). "
+    "The first turn of a workspace that was never named also sends `title` ({name}) once, at any point, possibly after `done`. "
     "Swagger UI cannot show a stream; use `curl -N`.",
     tags=["chat"],
     response_class=StreamingResponse,
     responses={200: {"content": {"text/event-stream": {}}}},
 )
-async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user: CurrentUser, session: Db) -> StreamingResponse:
+async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user: CurrentUser, session: Db, request: Request) -> StreamingResponse:
     settings = get_settings()
     # Chat ids name a session folder, so they get the same check as agent ids.
     if not AGENT_ID.fullmatch(chat_id):
@@ -53,6 +58,14 @@ async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user:
     # Read per turn, so a rename, a new job or a broken skill reaches the very next message.
     agent = await agents.get(session, agent_id, user.id)
     needs_fixing = [s for s in (await knowledge_service.list_skills(settings, agent_id)).skills if s.status != "ok"]
+    side_tasks = []
+    # A workspace started from a message alone: named from the message at once, so the list shows
+    # something during the turn, then by the side model's title when it comes back.
+    if agent.name == DEFAULT_NAME and agent.last_used_at is None:
+        name = titles.provisional(body.prompt)
+        await agents.update(session, agent_id, user.id, {"name": name})
+        agent.name = name
+        side_tasks.append(_title_task(request, agent_id, user.id, name, side_model, body.prompt))
     # Recorded once the turn is accepted, so the agents list shows which agent was used last.
     await agents.touch(session, agent_id)
     await session.commit()
@@ -66,6 +79,21 @@ async def send_turn(agent_id: OwnedAgent, chat_id: str, body: TurnRequest, user:
         lambda: knowledge_service.skill_hashes(settings, agent_id),
         user.id,
         settings.max_running_turns,
+        side_tasks,
     )
     # No buffering by a proxy, so events reach the browser as they happen.
     return StreamingResponse(stream, media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+def _title_task(request: Request, agent_id: str, user_id: str, provisional: str, side_model, prompt: str) -> turn_service.SideTask:
+    async def work() -> str | None:
+        title = await titles.generate(side_model, prompt)
+        if title is None or title == provisional:
+            return None
+        # Its own session: the request's closes once the stream starts.
+        async with async_sessionmaker(request.app.state.db_engine)() as session:
+            renamed = await agents.rename_if(session, agent_id, user_id, provisional, title)
+            await session.commit()
+        return message("title", {"name": title}) if renamed else None
+
+    return work

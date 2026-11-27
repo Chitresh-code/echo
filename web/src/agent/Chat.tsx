@@ -1,21 +1,19 @@
 import AccountTree from '@mui/icons-material/AccountTree'
-import AddComment from '@mui/icons-material/AddComment'
 import AutoStories from '@mui/icons-material/AutoStories'
-import ArrowUpward from '@mui/icons-material/ArrowUpward'
 import CheckCircleOutline from '@mui/icons-material/CheckCircleOutlineOutlined'
 import ChevronRight from '@mui/icons-material/ChevronRight'
 import ErrorOutlined from '@mui/icons-material/ErrorOutlined'
 import ExpandMore from '@mui/icons-material/ExpandMore'
 import RadioButtonUnchecked from '@mui/icons-material/RadioButtonUnchecked'
-import Stop from '@mui/icons-material/Stop'
 import Terminal from '@mui/icons-material/Terminal'
-import { Alert, Box, ButtonBase, CircularProgress, IconButton, InputBase, Link, Tooltip, Typography } from '@mui/material'
+import { Alert, Box, ButtonBase, CircularProgress, Link, Typography } from '@mui/material'
 import { useEffect, useRef, useState } from 'react'
 import { api, errorText } from '../api/client'
 import { streamTurn, type PlanItem, type TurnEvent } from '../api/stream'
 import type { Usage } from '../api/types'
 import { compact } from '../format'
 import { MONO } from '../theme'
+import { Composer, writeDraft } from '../composer/Composer'
 import { Markdown } from './Markdown'
 import { ModelPicker, useModelChoice } from './ModelPicker'
 
@@ -29,6 +27,7 @@ type Message =
   | { role: 'agent'; parts: Part[]; usage?: Usage; learned?: string[]; seconds?: number; error?: string; stopped?: boolean }
 type AgentMessage = Extract<Message, { role: 'agent' }>
 
+// shortcut: per tab and not shared, so two tabs on one workspace hold separate chats and neither sees the other's turn; coordinate through stored chats.
 const chatKey = (agentId: string) => `echo.chat.${agentId}`
 
 function storedChat(agentId: string): string | null {
@@ -39,7 +38,7 @@ function storedChat(agentId: string): string | null {
   }
 }
 
-function storeChat(agentId: string, chatId: string | null) {
+export function storeChat(agentId: string, chatId: string | null) {
   try {
     if (chatId) sessionStorage.setItem(chatKey(agentId), chatId)
     else sessionStorage.removeItem(chatKey(agentId))
@@ -99,7 +98,9 @@ export function apply(message: AgentMessage, event: TurnEvent): AgentMessage {
     case 'done':
       return { ...message, usage: event.data.usage, learned: event.data.learned }
     case 'error':
-      return { ...message, error: `${event.data.message} (${event.data.code}${event.data.request_id ? `, request ${event.data.request_id}` : ''})` }
+      return { ...message, error: event.data.request_id ? `${event.data.message} (request ${event.data.request_id})` : event.data.message }
+    case 'title':
+      return message
   }
 }
 
@@ -176,33 +177,72 @@ function Plan({ items }: { items: PlanItem[] }) {
   )
 }
 
-export function Chat({ agentId, onTurnDone, onOpen }: { agentId: string; onTurnDone: () => void; onOpen: (path: string) => void }) {
+type Props = {
+  agentId: string
+  /** A message to send as soon as the models are known, once: the one typed on the home page. */
+  initial?: string
+  onTurnStart: () => void
+  onTurnDone: () => void
+  onTitle: (name: string) => void
+  /** Stops the running turn; null when none runs. */
+  onRunning: (stop: (() => void) | null) => void
+  onOpen: (path: string) => void
+}
+
+export function Chat({ agentId, initial, onTurnStart, onTurnDone, onTitle, onRunning, onOpen }: Props) {
   const [messages, setMessages] = useState<Message[]>([])
   const [chatId, setChatId] = useState<string | null>(() => storedChat(agentId))
-  const [draft, setDraft] = useState('')
   const [running, setRunning] = useState<AbortController | null>(null)
+  const [notice, setNotice] = useState('')
+  // Bumped to reopen the message box on a draft written for it.
+  const [boxKey, setBoxKey] = useState(0)
   const models = useModelChoice()
   const end = useRef<HTMLDivElement>(null)
+  const sentInitial = useRef(false)
 
   // A block body: scrollIntoView can return a promise, which React would take for a cleanup function.
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' })
   }, [messages])
 
-  const updateLast = (change: (m: Extract<Message, { role: 'agent' }>) => Message) =>
+  useEffect(() => onRunning(running ? () => running.abort() : null), [running, onRunning])
+
+  const updateLast = (change: (m: AgentMessage) => Message) =>
     setMessages((all) => {
       const last = all.at(-1)
       return last?.role === 'agent' ? [...all.slice(0, -1), change(last)] : all
     })
 
-  async function send() {
-    const prompt = draft.trim()
-    if (!prompt || running || !models.choice) return
-    setDraft('')
+  /** Resolves once the turn has started (true), or with false when it never did, so the message
+   *  box gets the text back. The turn itself runs on after that. */
+  function send(prompt: string): Promise<boolean> {
+    setNotice('')
+    if (running) return Promise.resolve(false)
+    if (!models.choice) {
+      setNotice('Choose a model below first.')
+      return Promise.resolve(false)
+    }
+    const choice = models.choice
+    return new Promise((started) => void run(prompt, choice, started))
+  }
+
+  async function run(prompt: string, choice: NonNullable<typeof models.choice>, started: (ok: boolean) => void) {
     setMessages((all) => [...all, { role: 'user', text: prompt }, { role: 'agent', parts: [] }])
     const controller = new AbortController()
     setRunning(controller)
-    const started = performance.now()
+    const startedAt = performance.now()
+    let begun = false
+    let finished = false
+    // The reply ends at done; the stream can stay open a little longer for the workspace's title.
+    const finish = () => {
+      if (finished) return
+      finished = true
+      const seconds = Math.round((performance.now() - startedAt) / 1000)
+      updateLast((m) => ({ ...m, seconds }))
+      setRunning(null)
+      // The agent may have changed files, so the explorer and open files catch up.
+      onTurnDone()
+    }
     try {
       let id = chatId
       if (!id) {
@@ -210,141 +250,123 @@ export function Chat({ agentId, onTurnDone, onOpen }: { agentId: string; onTurnD
         setChatId(id)
         storeChat(agentId, id)
       }
-      const body = { prompt, credential_id: models.choice.credentialId, model: models.choice.model, effort: models.effort }
+      const body = { prompt, credential_id: choice.credentialId, model: choice.model, effort: models.effort }
       for await (const event of streamTurn(`/api/agents/${agentId}/chats/${id}/turns`, body, controller.signal)) {
-        updateLast((m) => apply(m, event))
+        if (!begun) {
+          begun = true
+          started(true)
+          onTurnStart()
+        }
+        if (event.event === 'title') onTitle(event.data.name)
+        else updateLast((m) => apply(m, event))
+        if (event.event === 'done' || event.event === 'error') finish()
       }
     } catch (e) {
-      if (controller.signal.aborted) updateLast((m) => ({ ...m, stopped: true }))
-      else updateLast((m) => ({ ...m, error: errorText(e) }))
+      if (!begun) {
+        // Nothing ran: the message goes back in the box, and only the reason stays here.
+        setMessages((all) => all.slice(0, -2))
+        setRunning(null)
+        if (!controller.signal.aborted) setNotice(errorText(e))
+        finished = true
+        started(false)
+        return
+      }
+      if (!finished) {
+        if (controller.signal.aborted) updateLast((m) => ({ ...m, stopped: true }))
+        else updateLast((m) => ({ ...m, error: `${errorText(e)} The connection to the agent was lost, so the turn stopped. What it already changed stays in its files.` }))
+      }
     } finally {
-      const seconds = Math.round((performance.now() - started) / 1000)
-      updateLast((m) => ({ ...m, seconds }))
-      setRunning(null)
-      // The agent may have changed files, so the explorer and open files catch up.
-      onTurnDone()
+      if (!begun) started(true)
+      finish()
     }
   }
 
-  function newChat() {
-    setChatId(null)
-    storeChat(agentId, null)
-    setMessages([])
-  }
-
-  const title = messages.find((m) => m.role === 'user')?.text ?? (chatId ? 'Chat' : 'New chat')
+  // The message typed on the home page, sent once the keys are known. If it cannot be sent it is
+  // left in the box as a draft instead of being lost.
+  useEffect(() => {
+    if (!initial || sentInitial.current || models.keys === null) return
+    sentInitial.current = true
+    send(initial).then((ok) => {
+      if (ok) return
+      writeDraft(agentId, initial)
+      setBoxKey((k) => k + 1)
+    })
+    // send reads the latest state when called; this runs once, when the keys arrive.
+  }, [initial, models.keys])
 
   return (
-    <Box component="section" aria-label="Chat" sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%', bgcolor: 'background.paper' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1, pl: 2, pr: 1, borderBottom: 1, borderColor: 'divider' }}>
-        <Typography sx={{ flexGrow: 1, minWidth: 0, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</Typography>
-        <Tooltip title="New chat">
-          <span>
-            <IconButton aria-label="New chat" onClick={newChat} disabled={!!running} sx={{ width: 32, height: 32, border: 1, borderColor: 'divider', borderRadius: '8px' }}>
-              <AddComment sx={{ fontSize: 16 }} />
-            </IconButton>
-          </span>
-        </Tooltip>
-      </Box>
-
-      <Box sx={{ flexGrow: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2, fontSize: 14, lineHeight: 1.55 }}>
-        {messages.length === 0 && (
-          <Typography color="text.secondary" sx={{ m: 'auto', textAlign: 'center', maxWidth: 300 }}>
-            {chatId
-              ? 'This chat continues where it left off. Earlier messages are not shown after a reload.'
-              : 'Show the agent its job: give it a task, then correct it. What it learns stays with this agent.'}
-          </Typography>
-        )}
-        {messages.map((m, i) =>
-          m.role === 'user' ? (
-            <Box key={i} sx={{ alignSelf: 'flex-end', maxWidth: '85%', px: 1.75, py: 1.25, borderRadius: '12px 12px 4px 12px', bgcolor: 'var(--raised)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
-              {m.text}
-            </Box>
-          ) : (
-            <Box key={i} sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-              {m.parts.map((p, j) =>
-                p.kind === 'text' ? (
-                  <Markdown key={j} text={p.text} />
-                ) : p.kind === 'tool' ? (
-                  <ToolRow key={p.id} tool={p} />
-                ) : p.kind === 'delegate' ? (
-                  <DelegateBlock key={p.id} part={p} running={i === messages.length - 1 && !!running} />
-                ) : (
-                  <Plan key="plan" items={p.items} />
-                ),
-              )}
-              {m.learned && m.learned.length > 0 && (
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.75, px: 1.25, py: 0.75, borderRadius: '8px', bgcolor: 'var(--accentSoft)', fontSize: 12 }}>
-                  <AutoStories sx={{ fontSize: 14, color: 'primary.main' }} />
-                  <span>Learned:</span>
-                  {m.learned.map((name) => (
-                    <Link key={name} component="button" type="button" onClick={() => onOpen(`.agent/skills/${name}/SKILL.md`)} sx={{ fontFamily: MONO, fontSize: 12 }}>
-                      {name}
-                    </Link>
-                  ))}
-                </Box>
-              )}
-              {i === messages.length - 1 && running && <Typography color="text.secondary" sx={{ fontSize: 12 }}>Working…</Typography>}
-              {m.error && <Alert severity="error" sx={{ fontSize: 13 }}>{m.error}</Alert>}
-              {m.stopped && (
-                <Typography color="text.secondary" sx={{ fontSize: 12 }}>
-                  Stopped. What the agent already changed stays in its files.
-                </Typography>
-              )}
-              {(m.usage || m.seconds !== undefined) && !running && (
-                <Typography color="text.secondary" sx={{ fontSize: 12 }}>
-                  {m.usage && `${compact(m.usage.inputTokens + m.usage.cacheReadInputTokens + m.usage.cacheWriteInputTokens)} in · ${compact(m.usage.outputTokens)} out · `}
-                  {m.seconds} s
-                </Typography>
-              )}
-            </Box>
-          ),
-        )}
-        <div ref={end} />
-      </Box>
-
-      <Box
-        component="form"
-        onSubmit={(e) => {
-          e.preventDefault()
-          send()
-        }}
-        sx={{ pt: 1.5, px: 2, pb: 2, borderTop: 1, borderColor: 'divider', display: 'flex', flexDirection: 'column', gap: 1 }}
-      >
-        <InputBase
-          multiline
-          minRows={3}
-          maxRows={12}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault()
-              send()
-            }
-          }}
-          placeholder="Give the agent a task, or correct what it did"
-          inputProps={{ 'aria-label': 'Message the agent', maxLength: 100000 }}
-          sx={{ px: 1.5, py: 1.25, border: 1, borderColor: 'divider', borderRadius: '10px', bgcolor: 'background.default' }}
-        />
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, '& > button:last-of-type': { flexShrink: 0 } }}>
-          <ModelPicker state={models} disabled={!!running} />
-          <Box sx={{ flexGrow: 1 }} />
-          {running ? (
-            <IconButton aria-label="Stop" onClick={() => running.abort()} sx={{ width: 36, height: 36, borderRadius: '10px', border: 1, borderColor: 'divider' }}>
-              <Stop fontSize="small" />
-            </IconButton>
-          ) : (
-            <IconButton
-              type="submit"
-              aria-label="Send"
-              disabled={!draft.trim() || !models.choice}
-              sx={{ width: 36, height: 36, borderRadius: '10px', bgcolor: 'primary.main', color: 'primary.contrastText', '&:hover': { bgcolor: 'primary.dark' }, '&.Mui-disabled': { bgcolor: 'var(--raised)' } }}
-            >
-              <ArrowUpward fontSize="small" />
-            </IconButton>
+    <Box component="section" aria-label="Chat" sx={{ display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%' }}>
+      <Box sx={{ flexGrow: 1, minHeight: 0, overflowY: 'auto' }}>
+        <Box sx={{ maxWidth: 760, mx: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 2, fontSize: 14, lineHeight: 1.55, minHeight: '100%' }}>
+          {messages.length === 0 && (
+            <Typography color="text.secondary" sx={{ m: 'auto', textAlign: 'center', maxWidth: 360 }}>
+              {chatId
+                ? 'This chat continues where it left off. Earlier messages are not shown after a reload.'
+                : 'Give the agent a task and correct it where needed. What it learns stays with this workspace.'}
+            </Typography>
           )}
+          {messages.map((m, i) =>
+            m.role === 'user' ? (
+              <Box key={i} sx={{ alignSelf: 'flex-end', maxWidth: '85%', px: 1.75, py: 1.25, borderRadius: '12px 12px 4px 12px', bgcolor: 'var(--raised)', overflowWrap: 'anywhere' }}>
+                <Markdown text={m.text} />
+              </Box>
+            ) : (
+              <Box key={i} sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                {m.parts.map((p, j) =>
+                  p.kind === 'text' ? (
+                    <Markdown key={j} text={p.text} />
+                  ) : p.kind === 'tool' ? (
+                    <ToolRow key={p.id} tool={p} />
+                  ) : p.kind === 'delegate' ? (
+                    <DelegateBlock key={p.id} part={p} running={i === messages.length - 1 && !!running} />
+                  ) : (
+                    <Plan key="plan" items={p.items} />
+                  ),
+                )}
+                {m.learned && m.learned.length > 0 && (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 0.75, px: 1.25, py: 0.75, borderRadius: '8px', bgcolor: 'var(--accentSoft)', fontSize: 12 }}>
+                    <AutoStories sx={{ fontSize: 14, color: 'primary.main' }} />
+                    <span>Learned:</span>
+                    {m.learned.map((name) => (
+                      <Link key={name} component="button" type="button" onClick={() => onOpen(`.agent/skills/${name}/SKILL.md`)} sx={{ fontFamily: MONO, fontSize: 12 }}>
+                        {name}
+                      </Link>
+                    ))}
+                  </Box>
+                )}
+                {i === messages.length - 1 && running && <Typography role="status" color="text.secondary" sx={{ fontSize: 12 }}>Working…</Typography>}
+                {m.error && <Alert severity="error" sx={{ fontSize: 13 }}>{m.error}</Alert>}
+                {m.stopped && (
+                  <Typography color="text.secondary" sx={{ fontSize: 12 }}>
+                    Stopped. What the agent already changed stays in its files.
+                  </Typography>
+                )}
+                {(m.usage || m.seconds !== undefined) && !(i === messages.length - 1 && running) && (
+                  <Typography color="text.secondary" sx={{ fontSize: 12 }}>
+                    {m.usage && `${compact(m.usage.inputTokens + m.usage.cacheReadInputTokens + m.usage.cacheWriteInputTokens)} in · ${compact(m.usage.outputTokens)} out · `}
+                    {m.seconds} s
+                  </Typography>
+                )}
+              </Box>
+            ),
+          )}
+          <div ref={end} />
         </Box>
+      </Box>
+
+      <Box sx={{ maxWidth: 760, width: '100%', mx: 'auto', px: 2, pb: 2, pt: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        {notice && <Alert severity="error" onClose={() => setNotice('')}>{notice}</Alert>}
+        <Composer
+          key={boxKey}
+          draftKey={agentId}
+          autoFocus={!initial}
+          busy={!!running}
+          disabled={models.keys?.length === 0}
+          onSend={send}
+          onStop={() => running?.abort()}
+          placeholder="Give the agent a task, or correct what it did"
+          footer={<Box sx={{ display: 'flex', gap: 1, minWidth: 0 }}><ModelPicker state={models} disabled={!!running} /></Box>}
+        />
       </Box>
     </Box>
   )

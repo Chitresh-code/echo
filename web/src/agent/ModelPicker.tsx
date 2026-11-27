@@ -30,17 +30,23 @@ function store(key: string, value: unknown) {
 /** The key, model and effort the next turn runs on. The last choice is remembered in this browser. */
 export function useModelChoice() {
   const [keys, setKeys] = useState<Credential[] | null>(null)
+  const [loadError, setLoadError] = useState('')
+  const [attempt, setAttempt] = useState(0)
   const [choice, setChoiceState] = useState<ModelChoice | null>(() => stored(CHOICE, null))
   const [effort, setEffortState] = useState<Effort>(() => stored(EFFORT, 'auto'))
 
+  // A failed load is not "no keys": it says so and can be retried, instead of asking to add one.
   useEffect(() => {
-    api<Credential[]>('/api/credentials').then(setKeys, () => setKeys([]))
-  }, [])
+    setLoadError('')
+    api<Credential[]>('/api/credentials').then(setKeys, (e) => setLoadError(errorText(e)))
+  }, [attempt])
 
   // A remembered key that has since been deleted is not offered.
   const valid = keys && choice && keys.some((k) => k.id === choice.credentialId) ? choice : null
   return {
     keys,
+    loadError,
+    retry: () => setAttempt((n) => n + 1),
     choice: valid,
     effort,
     setChoice: (c: ModelChoice) => (setChoiceState(c), store(CHOICE, c)),
@@ -51,7 +57,7 @@ export function useModelChoice() {
 const pill = { minHeight: 32, px: 1.25, borderRadius: '8px', fontSize: 12, fontWeight: 400, borderColor: 'divider', color: 'text.primary' }
 
 export function ModelPicker({ state, disabled }: { state: ReturnType<typeof useModelChoice>; disabled: boolean }) {
-  const { keys, choice, effort, setChoice, setEffort } = state
+  const { keys, loadError, retry, choice, effort, setChoice, setEffort } = state
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [effortAnchor, setEffortAnchor] = useState<HTMLElement | null>(null)
   const [keyId, setKeyId] = useState('')
@@ -65,6 +71,14 @@ export function ModelPicker({ state, disabled }: { state: ReturnType<typeof useM
     api<ProviderModel[]>(`/api/credentials/${keyId}/models`).then(setModels, (e) => setError(errorText(e)))
   }, [keyId])
 
+  if (loadError) {
+    return (
+      <Typography sx={{ fontSize: 12 }} color="error">
+        Your model keys did not load. {loadError}{' '}
+        <Link component="button" type="button" onClick={retry} sx={{ fontSize: 12 }}>Retry</Link>
+      </Typography>
+    )
+  }
   if (keys && keys.length === 0) {
     return (
       <Typography sx={{ fontSize: 12 }} color="text.secondary">

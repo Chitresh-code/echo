@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from apps.agents.models.agent import Agent
+from apps.agents.models.agent import DEFAULT_NAME, Agent
 from core.db import metadata
 
 agents = sa.Table(
@@ -21,7 +21,7 @@ agents = sa.Table(
 _FIELDS = (agents.c.id, agents.c.name, agents.c.job, agents.c.created_at, agents.c.last_used_at)
 
 
-async def add(db: AsyncSession, agent_id: str, owner_id: str, name: str = "Untitled agent", job: str = "") -> Agent:
+async def add(db: AsyncSession, agent_id: str, owner_id: str, name: str = DEFAULT_NAME, job: str = "") -> Agent:
     row = {"id": agent_id, "name": name, "job": job, "created_at": datetime.now(UTC), "last_used_at": None}
     await db.execute(agents.insert().values(owner_id=owner_id, **row))
     return Agent(**row)
@@ -42,6 +42,13 @@ async def get(db: AsyncSession, agent_id: str, owner_id: str) -> Agent | None:
 
 async def update(db: AsyncSession, agent_id: str, owner_id: str, fields: dict) -> None:
     await db.execute(agents.update().where(agents.c.id == agent_id, agents.c.owner_id == owner_id).values(**fields))
+
+
+async def rename_if(db: AsyncSession, agent_id: str, owner_id: str, expected: str, new: str) -> bool:
+    """Renames only while the name is still `expected`, so a rename the user made meanwhile wins.
+    Returns whether it renamed."""
+    query = agents.update().where(agents.c.id == agent_id, agents.c.owner_id == owner_id, agents.c.name == expected).values(name=new)
+    return (await db.execute(query)).rowcount == 1
 
 
 async def count_for(db: AsyncSession, owner_id: str) -> int:

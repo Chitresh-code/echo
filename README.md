@@ -1,6 +1,6 @@
 # Echo
 
-Echo gives you agents that each learn one job from you and keep what they learn. You create an agent with a name and a job, show it the job in a chat and correct it. It saves what it learns as skills in its own workspace, keeps notes across chats, and gets better at the job each time you come back.
+Echo is a self-improving agent harness that runs in the browser. Each agent has its own workspace, tools and model, and learns from its runs: it writes and refines its own skills, instructions and notes in its workspace, so it gets better with use.
 
 Every agent works in its own git workspace inside an nsjail jail, so it can run commands, install packages, build and commit without reaching your machine, your network or other agents. People sign in with Microsoft Entra and bring their own model keys (Anthropic, OpenAI, Google or any OpenAI-compatible endpoint). Keys are stored encrypted and never enter a jail.
 

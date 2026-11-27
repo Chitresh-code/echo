@@ -28,13 +28,19 @@ def test_create_and_list_newest_first(client, fake_runner):
     assert fake_runner.workspaces == [created["data"]["id"]]
     listed = client.get("/api/agents").json()
     assert [a["id"] for a in listed["data"]] == [created["data"]["id"], WS] and listed["meta"]["request_id"]
-    assert listed["data"][1]["name"] == "Untitled agent" and listed["data"][1]["job"] == ""
+    assert listed["data"][1]["name"] == "Test agent" and listed["data"][1]["job"] == ""
 
 
-@pytest.mark.parametrize("body", [{}, {"name": ""}, {"name": "   "}, {"name": "x" * 81}, {"name": "ok", "job": "x" * 501}])
+@pytest.mark.parametrize("body", [{"name": ""}, {"name": "   "}, {"name": "x" * 81}, {"name": "ok", "job": "x" * 501}])
 def test_create_checks_name_and_job(client, fake_runner, body):
     r = client.post("/api/agents", json=body)
     assert r.status_code == 422 and fake_runner.requests == [] and fake_runner.workspaces == []
+
+
+def test_create_without_a_name(client, fake_runner):
+    for body in ({}, {"name": None}, {"job": "Weekly reports"}):
+        created = client.post("/api/agents", json=body).json()["data"]
+        assert created["name"] == "New workspace" and created["job"] == body.get("job", "")
 
 
 def test_patch_renames_and_changes_the_job(client):
@@ -46,7 +52,7 @@ def test_patch_renames_and_changes_the_job(client):
 
 
 def test_get_one_agent(client):
-    assert client.get(f"/api/agents/{WS}").json()["data"]["name"] == "Untitled agent"
+    assert client.get(f"/api/agents/{WS}").json()["data"]["name"] == "Test agent"
 
 
 def test_patch_on_a_missing_agent_is_404(client):
