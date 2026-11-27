@@ -96,7 +96,7 @@ def test_start_sets_a_cookie_for_this_host_only(agent, client):
 def test_a_page_is_forwarded_with_its_cookie_stripped(agent, client, fake_runner):
     agent_id, _ = agent
     value = cookie_from(client, agent_id, start(client, agent_id)).split(";")[0]
-    fake_runner.preview_answer = (200, [("content-type", "text/html"), ("set-cookie", "echo_preview=forged; Path=/"), ("set-cookie", "sid=1"), ("set-cookie", "theme=dark")], b"<p>hi</p>")
+    fake_runner.preview_answer = (200, [("content-type", "text/html"), ("set-cookie", "echo_preview=forged; Path=/"), ("set-cookie", "sid=1"), ("set-cookie", "theme=dark; Domain=.preview.localhost")], b"<p>hi</p>")
     r = client.get("/a%2Fb/page?x=1", headers={"host": host(agent_id), "cookie": f"sid=1; {value}; theme=dark"})
     assert r.status_code == 200 and r.text == "<p>hi</p>"
     call = fake_runner.previews[-1]

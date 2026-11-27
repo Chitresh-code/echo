@@ -8,7 +8,9 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
-## 0.10.0 (in progress)
+## 0.10.0 (2026-11-27)
+
+Agent networks and live preview.
 
 ### Added
 
@@ -25,6 +27,11 @@ Until the first public release the major version stays 0. Each feature gets its 
 - The sandbox image adds `iproute2` and `dnsmasq-base`.
 - The agent is told it can use localhost within its workspace, to start servers with the `process` tool instead of `&` or `nohup`, and to tell the user which port to open.
 - The app's Content-Security-Policy allows frames from the preview domain, and from nothing when previews are off.
+- The user guide covers servers and previews (Chatting), turning previews on (Install), the process and preview endpoints (API) and what the sandbox volume now holds (Data).
+
+### Security
+
+- A preview's `Set-Cookie` headers lose their `Domain` attribute, so a page an agent wrote cannot set cookies on other preview hosts or on a parent domain it shares with Echo.
 
 ## 0.9.0 (2026-11-22)
 

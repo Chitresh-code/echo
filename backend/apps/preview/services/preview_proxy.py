@@ -61,8 +61,14 @@ def _request_headers(raw: list[tuple[bytes, bytes]], port: int) -> list[tuple[by
     return out
 
 
+def _host_only(cookie: bytes) -> bytes:
+    # A Domain attribute would hand the cookie to every other preview host, and to Echo's own host
+    # when the two share a parent domain, so every cookie a preview sets stays on its own host.
+    return b";".join(p for p in cookie.split(b";") if p.strip().lower().partition(b"=")[0].strip() != b"domain")
+
+
 def _response_headers(raw: list[tuple[bytes, bytes]], public_url: str) -> list[tuple[bytes, bytes]]:
-    out = [(k, v) for k, v in raw if k.lower() not in _DROP and not (k.lower() == b"set-cookie" and _is_ours(v))]
+    out = [(k, _host_only(v) if k.lower() == b"set-cookie" else v) for k, v in raw if k.lower() not in _DROP and not (k.lower() == b"set-cookie" and _is_ours(v))]
     # A second policy is enforced alongside any the server sets, so its own cannot loosen this one.
     out.append((b"content-security-policy", f"frame-ancestors {public_url}".encode()))
     return out

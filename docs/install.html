@@ -75,6 +75,12 @@ ECHO_SECRET_KEY=a key you generate, see below</code></pre>
 
       <p>Optional limits, also in <code>.env</code>: <code>ECHO_AGENT_DISK_MB</code> is each agent's storage in MB (2048), <code>ECHO_MAX_AGENTS</code> the agents each person may have (10), and <code>ECHO_MAX_RUNNING_TURNS</code> the replies each person may have running at once (2). With the defaults, one person can use at most 20 GB, so size the disk for the number of people times that.</p>
 
+      <h2 id="previews">Turn on previews</h2>
+      <p>Previews show the pages of servers an agent starts, in the agent's Preview view. They are off until you set where they are served. Each agent and port gets its own address under that name, so a page an agent made never runs on Echo's address. On your own machine, add to <code>.env</code>:</p>
+      <pre><code>ECHO_PREVIEW_URL=http://preview.localhost:8000</code></pre>
+      <p>Browsers send every name ending in <code>.localhost</code> to your own machine, so this needs no other setup. Use the same port as <code>ECHO_PUBLIC_URL</code>. Restart the api afterwards.</p>
+      <p>Anywhere else the address must be <code>https</code>, and you need a wildcard DNS name, such as <code>*.echo-preview.example.net</code>, pointing at Echo, with a wildcard certificate for it. Use a different domain from Echo's own if you can. Echo refuses to start if the preview name is the same as Echo's, sits under or above it, or has a path.</p>
+
       <h2 id="start">Start Echo</h2>
       <pre><code>docker compose up --build</code></pre>
       <p>Echo will not start if a setting is missing or malformed, and it says which one without printing secret values. Settings are read only when Echo starts, so restart it after changing <code>.env</code>:</p>

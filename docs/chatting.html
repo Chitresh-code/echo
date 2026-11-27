@@ -71,11 +71,21 @@
       <div class="tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><p>Web pages, files and command output are information to the agent, never instructions. If something it reads tells it to do something you did not ask for, it does not do it, and tells you.</p></div>
       <p>Links in the agent's replies open in a new tab. Images from other sites show as links and are never loaded, so a page the agent read cannot make your browser send data elsewhere.</p>
 
+      <h2 id="servers">Servers and previews</h2>
+      <p>Each agent's workspace has its own network, so a server the agent starts in one command answers the next one at <code>localhost</code>, and no other agent can reach it. The agent starts servers and watchers, such as <code>npm run dev</code>, as <b>processes</b> that keep running after the command that started them. Ask it to start one, and to say which port it listens on.</p>
+      <p>Open <b>Preview</b> above the editor to see them:</p>
+      <ul>
+        <li>Each process with its command and whether it is running or has exited. <b>Output</b> shows what it printed, and <b>Stop</b> stops it.</li>
+        <li>The ports listening in the workspace. Select one to show its page under the list. <b>Reload</b> shows changes, and <b>Open in a new tab</b> opens the page on its own.</li>
+      </ul>
+      <p>The page runs on an address of its own, never on Echo's, so a page the agent made cannot act as you in Echo. Only you can open your agent's previews. An open preview keeps working for 8 hours, and stops at once if the agent is deleted. If Preview says previews are not set up, whoever runs Echo has not turned them on; processes and their output still show.</p>
+      <p>A process stops when it exits, when the agent or you stop it, after 2 hours, or when Echo restarts. An agent can run up to 3 at once.</p>
+      <div class="tip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><p>Pages update when you press Reload, not on their own: the live reload of dev servers such as Vite does not connect through the preview.</p></div>
+
       <h2 id="limits">Limits</h2>
       <ul>
         <li>One message at a time per chat, and up to 2 replies running at once across all your chats, unless whoever runs Echo set another number.</li>
         <li>A reply stops after 30 minutes, and each command the agent runs stops after 2 minutes unless the agent asks for longer, up to 30 minutes.</li>
-        <li>The agent cannot open a server it starts, such as a website preview, because its workspace cannot reach itself over the network. Building and testing work, and so does anything that runs to completion.</li>
         <li>To keep cost down, summaries of web pages and the agent's notes are made by the provider's small model on the same key, and are not counted in the tokens shown.</li>
       </ul>
       <nav class="pager" aria-label="Previous and next">

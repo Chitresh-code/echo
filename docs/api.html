@@ -105,6 +105,19 @@ curl -b "$ECHO" http://localhost:8000/api/auth/me</code></pre>
       </ul>
       <p>Paths are relative to the workspace. A path that starts with <code>/</code> or uses <code>..</code> answers <code>invalid_path</code>. Files over 5 MB answer <code>file_too_large</code>, and a missing one <code>file_not_found</code>.</p>
 
+      <h2 id="processes">Processes and previews</h2>
+      <p>The agent starts servers and watchers as processes. You can watch and stop them, but not start them.</p>
+      <ul>
+        <li><code>GET /api/agents/{id}/processes</code> returns <code>processes</code>, each with <code>name</code>, <code>command</code>, <code>cwd</code>, <code>status</code> (<code>running</code> or <code>exited</code>), <code>exit_code</code> and <code>started_at</code>, and <code>ports</code>, the TCP ports listening in the agent's workspace.</li>
+        <li><code>GET /api/agents/{id}/processes/{name}/logs?tail=200</code> returns the last lines a process printed, 1 to 1000.</li>
+        <li><code>DELETE /api/agents/{id}/processes/{name}</code> stops it.</li>
+        <li><code>POST /api/agents/{id}/preview</code> with <code>{"port": 3000}</code> returns a <code>url</code> that shows that port's page. Open it in a browser within a minute; it gives that browser access to this one agent and port for 8 hours.</li>
+      </ul>
+      <dl class="codes">
+        <dt><code>process_not_found</code></dt><dd>The agent has no process with that name.</dd>
+        <dt><code>preview_off</code></dt><dd>Previews are not set up on this Echo (<code>ECHO_PREVIEW_URL</code> is not set).</dd>
+      </dl>
+
       <h2 id="chat">Chats</h2>
       <p>Start a chat, then send messages to it. Each chat keeps its own conversation, and an agent can have many.</p>
       <pre><code>curl -b "$ECHO" -X POST http://localhost:8000/api/agents/{id}/chats</code></pre>
