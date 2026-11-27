@@ -8,6 +8,16 @@ Every change adds a line under the current version heading (the newest one, mark
 
 Until the first public release the major version stays 0. Each feature gets its own minor version (0.6.0, 0.7.0), and a fix shipped on its own between features gets the next patch version (0.6.1). When a version is finished, replace "in progress" with the date, set `version` in `backend/pyproject.toml` and `web/package.json` to it, and open the next heading above it marked "in progress" when work on the next one starts.
 
+## 0.13.1 (2026-11-27)
+
+### Changed
+
+- The Credentials page is one tidy list of your keys, with Add key opening a short form instead of a panel beside them. It shows a spinner while loading and a Retry if the keys cannot be loaded.
+
+### Fixed
+
+- Browsers and password managers no longer fill your email into a new key's name or a saved password into its API key field.
+
 ## 0.13.0 (2026-11-27)
 
 Stored chats: every chat is kept, listed and reopened, and a turn runs on whether or not its page stays open.
